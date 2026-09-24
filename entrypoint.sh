@@ -57,6 +57,18 @@ if [ -n "$FNOX_AGE_KEY" ]; then
     fi
 fi
 
+# git credential helper for T3's Source Control: T3 clones over https with
+# terminal prompts disabled, so git needs non-interactive credentials. Point
+# git at `gh auth git-credential`, which serves the hosts.yml token persisted
+# above. The mise shim path is used instead of the version-pinned gh binary
+# so gh upgrades don't break it. ~/.gitconfig is not on the /data volume, so
+# this must run at every boot. Non-fatal under set -e.
+if git config --global --replace-all credential.https://github.com.helper "!$HOME/.local/share/mise/shims/gh auth git-credential" 2>/dev/null; then
+    echo "git credential helper set"
+else
+    echo "WARNING: git credential helper setup failed (non-fatal), continuing boot"
+fi
+
 # fnox.toml is baked into the image at ~/fnox.toml.
 # Launch t3 through `fnox exec` so the server process (and every terminal
 # and agent it spawns) inherits decrypted secrets.
