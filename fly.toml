@@ -1,0 +1,23 @@
+app = "liv-pi-box"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  PORT = "3773"
+
+[[mounts]]
+  source = "pi_data"
+  destination = "/data"
+  initial_size = "10gb"
+
+# NOTE: no [[services]] on purpose. Access is via T3 Connect's outbound
+# managed tunnel, so nothing is exposed on the public Fly proxy and there
+# is no proxy-driven auto-stop; the machine stays up for T3 Mobile.
+
+# t3 serve idles around ~150MB RSS and pi with big context wants headroom;
+# 256MB got OOM-killed twice on first boot (Sep 24 2026), so run at 2GB.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "2gb"

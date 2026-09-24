@@ -1,0 +1,1 @@
+{"$schema":"https://docs.renovatebot.com/renovate-schema.json","extends":["config:recommended"],"labels":["dependencies"],"schedule":["every week on monday before 5am"],"timezone":"America/Vancouver"}

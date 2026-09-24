@@ -1,0 +1,12 @@
+#:schema https://fnox.jdx.dev/schema.json
+default_provider = "age"
+
+[providers.age]
+type = "age"
+recipients = ["age1delgu0rpplqt3frt4dmmfre27wxfc8txvft35wt3tnelwrky6p2s376v98"]
+key_file = "/home/agent/.config/fnox/age.txt"
+
+[secrets]
+# GITHUB_TOKEN intentionally disabled (Sep 24 2026, Zach's call):
+# T3 Connect handles GitHub access for the environment, so the box
+# no longer carries its own token. Re-add via `fnox add` if ever needed.
