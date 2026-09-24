@@ -3,10 +3,10 @@ set -e
 
 # Persistent storage: symlink config dirs to /data volume.
 # Fly machine restarts boot a fresh rootfs from the image, so anything that
-# must survive (pi auth/extensions, t3 link credentials, codex login, fnox
+# must survive (pi auth/extensions, t3 link credentials, fnox
 # age key) has to live under /data.
-mkdir -p /data/.pi /data/.config /data/.t3 /data/.codex
-for d in .pi .config .t3 .codex; do
+mkdir -p /data/.pi /data/.config /data/.t3
+for d in .pi .config .t3; do
     if [ ! -L ~/$d ] && [ -d ~/$d ]; then
         # Move existing dir to volume if volume is empty
         if [ -z "$(ls -A /data/$d 2>/dev/null)" ]; then
