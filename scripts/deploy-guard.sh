@@ -12,6 +12,23 @@ APP="${FLY_APP:-liv-pi-box}"
 MACHINE="${FLY_MACHINE:-e82ee5dbd019d8}"
 : "${FLY_API_TOKEN:?FLY_API_TOKEN must be set}"
 
+api() {
+  curl -sS -m 30 -H "Authorization: Bearer $FLY_API_TOKEN" "$@"
+}
+
+# If the machine is known to not be running, no agent sessions can be active:
+# a deploy is exactly what will bring it back. (Previously an unreachable
+# machine made the exec check fail, which read as "busy" and blocked the
+# fix deploy forever.) Unknown state stays conservative (busy).
+STATE=$(api "https://api.machines.dev/v1/apps/$APP/machines/$MACHINE" | jq -r '.state // empty')
+if [ -n "$STATE" ] && [ "$STATE" != "started" ]; then
+  echo "guard: machine state is '$STATE' (not started), safe to deploy"
+  exit 0
+elif [ -z "$STATE" ]; then
+  echo "guard: could not determine machine state, assuming busy"
+  exit 1
+fi
+
 # Bracketed first letters so pgrep never matches its own sh -c command line.
 CHECK='
 busy=0
