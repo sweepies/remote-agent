@@ -1,5 +1,7 @@
 # Pinned tool versions, managed by mise and kept current by Renovate (weekly).
 # Dockerfile installs everything from this file via `mise install`.
+# 1password-cli is "latest": it is not on GitHub so Renovate cannot track it,
+# and mise pulls it from 1Password's own CDN. Renovate ignores it (see renovate.json).
 [tools]
 node = "24.21.0"
 fnox = "1.35.3"
@@ -8,4 +10,4 @@ pitchfork = "2.27.0"
 gh = "2.101.0"
 codex = "0.156.1"
 "npm:@earendil-works/pi-coding-agent" = "0.87.1"
-"1password-cli" = "2.39.0"
+"1password-cli" = "latest"
