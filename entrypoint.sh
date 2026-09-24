@@ -39,15 +39,22 @@ fi
 # ~/.config/gh/hosts.yml and ignores env-var tokens. Persist the fnox-held
 # GITHUB_TOKEN to gh's auth file at boot (0600). Idempotent and self-healing
 # on fresh volumes; ~/.config is symlinked to /data above, so it sticks.
-# `gh auth login --with-token` is non-interactive and resolves the username.
+# Notes:
+# - `gh auth login --with-token` is non-interactive and resolves the username.
+# - `env -u GITHUB_TOKEN` is required: gh refuses to write hosts.yml (exit 1)
+#   when GITHUB_TOKEN is already in the environment, which fnox exec always sets.
+# - Wrapped in if/else so a failure here can never kill the boot (set -e).
 if [ -n "$FNOX_AGE_KEY" ]; then
     mkdir -p ~/.config/gh
-    fnox exec -c /home/agent/fnox.toml -- sh -c '
-        if [ -n "$GITHUB_TOKEN" ]; then
-            printf %s "$GITHUB_TOKEN" | gh auth login --with-token -h github.com >/dev/null 2>&1 \
-                && chmod 600 ~/.config/gh/hosts.yml
-        fi'
-    echo "gh auth persisted"
+    if fnox exec -c /home/agent/fnox.toml -- sh -c '
+        [ -n "$GITHUB_TOKEN" ] || exit 0
+        printf %s "$GITHUB_TOKEN" | env -u GITHUB_TOKEN gh auth login --with-token -h github.com >/dev/null 2>&1
+    '; then
+        chmod 600 ~/.config/gh/hosts.yml 2>/dev/null || true
+        echo "gh auth persisted"
+    else
+        echo "WARNING: gh auth persistence failed (non-fatal), continuing boot"
+    fi
 fi
 
 # fnox.toml is baked into the image at ~/fnox.toml.
