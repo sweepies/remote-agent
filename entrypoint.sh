@@ -35,6 +35,21 @@ else
     echo "WARNING: FNOX_AGE_KEY not set, fnox decryption will fail"
 fi
 
+# gh auth for T3: T3's Source Control only trusts `gh auth status`, which reads
+# ~/.config/gh/hosts.yml and ignores env-var tokens. Persist the fnox-held
+# GITHUB_TOKEN to gh's auth file at boot (0600). Idempotent and self-healing
+# on fresh volumes; ~/.config is symlinked to /data above, so it sticks.
+# `gh auth login --with-token` is non-interactive and resolves the username.
+if [ -n "$FNOX_AGE_KEY" ]; then
+    mkdir -p ~/.config/gh
+    fnox exec -c /home/agent/fnox.toml -- sh -c '
+        if [ -n "$GITHUB_TOKEN" ]; then
+            printf %s "$GITHUB_TOKEN" | gh auth login --with-token -h github.com >/dev/null 2>&1 \
+                && chmod 600 ~/.config/gh/hosts.yml
+        fi'
+    echo "gh auth persisted"
+fi
+
 # fnox.toml is baked into the image at ~/fnox.toml.
 # Launch t3 through `fnox exec` so the server process (and every terminal
 # and agent it spawns) inherits decrypted secrets.

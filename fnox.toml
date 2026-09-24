@@ -7,6 +7,8 @@ recipients = ["age1delgu0rpplqt3frt4dmmfre27wxfc8txvft35wt3tnelwrky6p2s376v98"]
 key_file = "/home/agent/.config/fnox/age.txt"
 
 [secrets]
-# GITHUB_TOKEN intentionally disabled (Sep 24 2026, Zach's call):
-# T3 Connect handles GitHub access for the environment, so the box
-# no longer carries its own token. Re-add via `fnox add` if ever needed.
+GITHUB_TOKEN= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmRi9hRVIrVmoxZGhIdHhONDJrcG1oczNkL3djR1VySUI3NWlLK0tHbVd3ClFxT3dIZnlKZExOaEZVVCtGVVprZTZkYnVSS1VqTXFCZXdtaW5VTEpzN1UKLT4gN215d1tZYU4tZ3JlYXNlCkU1ZTR1bS85S3c5MlZ2MmNjNmh6WUQvMHNtZ2YzeU14WGhoamNTRG1IbFJnM3I4Vyt3Z0JPYjJraEZuYzduL0oKMnJkbVlOcHdUTkZJejVzTFgzd09GRTZDbVdKb2h4cVpwNGZOdGcKLS0tIGd2MmppbElXdDlROHhsd2c2QXV3QUFUMm5YOUpLdFg3WTNXcDVMcjIvcFEKxfPNqyky0Yd6idOwD4zt+eieB6tM8jq4vdSvp6xgl6BflX9/qT57QR/oQ9FSiS2UkJ1vuiyihT3Pc8eQyEIMfbrUKufTsc6s" }
+# GITHUB_TOKEN: dedicated token minted on Zach's account (Sep 24 2026) via
+# GitHub device flow, for T3's Source Control `gh auth status` detection.
+# Decrypted by fnox exec and persisted to gh's hosts.yml at boot by
+# entrypoint.sh (gh's file auth, since T3 ignores env-var tokens).
