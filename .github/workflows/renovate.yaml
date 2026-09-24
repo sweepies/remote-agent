@@ -2,22 +2,14 @@ name: Renovate
 
 "on":
   schedule:
-    - cron: '0 11 * * 1'
+    - cron: '0 11 * * 1' # Mondays 11:00 UTC
   workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
 
 jobs:
   renovate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Self-hosted Renovate
-        uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
-        with:
-          token: ${{ secrets.RENOVATE_TOKEN }}
-        env:
-          RENOVATE_CONFIG_FILE: 'renovate.json'
-          RENOVATE_PLATFORM: 'github'
-          RENOVATE_AUTODISCOVER: 'false'
-          RENOVATE_REPOSITORIES: ${{ github.repository }}
+    uses: sweepies/devops-minter/.github/workflows/renovate.yml@main
