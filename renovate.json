@@ -1,1 +1,1 @@
-{"$schema":"https://docs.renovatebot.com/renovate-schema.json","extends":["config:recommended"],"labels":["dependencies"],"schedule":["every week on monday before 5am"],"timezone":"America/Vancouver"}
+{"$schema":"https://docs.renovatebot.com/renovate-schema.json","dependencyDashboard":true,"extends":["config:best-practices"],"labels":["dependencies"],"prConcurrentLimit":0,"prHourlyLimit":0,"rangeStrategy":"pin","schedule":["every week on monday before 5am"],"semanticCommits":"enabled","timezone":"America/Vancouver"}

@@ -33,9 +33,11 @@ are the most direct signal of "a session is working right now".
 ## Dependencies
 
 All tools are pinned in `.mise.toml` and installed in the image with
-`mise install`. [Renovate](https://docs.renovatebot.com/) runs weekly
-(`renovate.json`) and opens PRs bumping the pins; merging one to `main`
-triggers a deploy. The Renovate GitHub App must be installed on this repo.
+`mise install`. Self-hosted [Renovate](https://docs.renovatebot.com/)
+(`.github/workflows/renovate.yaml`, same pattern as maccrae-infra: the
+`renovatebot/github-action` on a Monday schedule with a `RENOVATE_TOKEN`
+secret, no GitHub App) opens PRs bumping the pins; merging one to `main`
+triggers a deploy.
 
 ## Secrets
 
