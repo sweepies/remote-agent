@@ -36,9 +36,9 @@ are the most direct signal of "a session is working right now".
 
 All tools are pinned in `.mise.toml` and installed in the image with
 `mise install`. Self-hosted [Renovate](https://docs.renovatebot.com/)
-(`.github/workflows/renovate.yaml`, same pattern as maccrae-infra: the
-`renovatebot/github-action` on a Monday schedule with a `RENOVATE_TOKEN`
-secret, no GitHub App) opens PRs bumping the pins; merging one to `main`
+(`.github/workflows/renovate.yaml`) calls the central minter-backed
+reusable workflow on Mondays. The `sweepies-ops` installation token is
+scoped to this repository; no per-repository Renovate secret is needed. opens PRs bumping the pins; merging one to `main`
 triggers a deploy.
 
 ## Secrets
