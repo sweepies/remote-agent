@@ -3,10 +3,10 @@ set -e
 
 # Persistent storage: symlink config dirs to /data volume.
 # Fly machine restarts boot a fresh rootfs from the image, so anything that
-# must survive (pi auth/extensions, t3 link credentials, fnox
+# must survive (codex login, t3 link credentials, fnox
 # age key) has to live under /data.
-mkdir -p /data/.pi /data/.config /data/.t3
-for d in .pi .config .t3; do
+mkdir -p /data/.codex /data/.config /data/.t3
+for d in .codex .config .t3; do
     if [ ! -L ~/$d ] && [ -d ~/$d ]; then
         # Move existing dir to volume if volume is empty
         if [ -z "$(ls -A /data/$d 2>/dev/null)" ]; then
@@ -17,12 +17,14 @@ for d in .pi .config .t3; do
     [ ! -e ~/$d ] && ln -s /data/$d ~/$d
 done
 
-# Seed pi agent defaults (global AGENTS.md + settings.json with subagent
-# model routing) from the image on first boot. cp -n: existing volume
-# state always wins, so a pi-installed extension is never clobbered.
-mkdir -p /data/.pi/agent
-cp -n /home/agent/pi-defaults/AGENTS.md /data/.pi/agent/AGENTS.md
-cp -n /home/agent/pi-defaults/settings.json /data/.pi/agent/settings.json
+# Seed codex defaults (config.toml + custom agents with per-agent model
+# routing) from the image on first boot. cp -n: existing volume state always
+# wins, so edits made through T3 are never clobbered.
+mkdir -p /data/.codex/agents
+cp -n /home/agent/codex-defaults/config.toml /data/.codex/config.toml
+for f in /home/agent/codex-defaults/agents/*.toml; do
+    cp -n "$f" /data/.codex/agents/
+done
 
 # Inject fnox age key from Fly secret to expected location.
 # (Zach: the key itself is injected, secrets stay encrypted in fnox.toml.)

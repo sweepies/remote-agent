@@ -1,0 +1,9 @@
+# Codex CLI config for the liv-pi-box.
+# Seeded into /data/.codex/config.toml on first boot (cp -n: volume state wins,
+# so edits made through T3 are never clobbered).
+model = "gpt-6-sol"
+model_reasoning_effort = "high"
+
+[agents]
+default_subagent_model = "gpt-6-sol"
+default_subagent_reasoning_effort = "high"

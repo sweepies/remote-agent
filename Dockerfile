@@ -26,19 +26,14 @@ RUN mise install
 # T3 Code CLI via official installer (self-contained binary, no Node needed)
 RUN curl -fsSL https://t3.codes/install.sh | sh
 
-# pi extensions: subagents, web access, billion context
-# (pi install takes exactly one source per invocation)
-RUN pi install npm:pi-subagents && \
-    pi install npm:pi-web-access && \
-    pi install npm:billion-context-pi
+# codex defaults: config.toml + custom agents (default/worker on gpt-6-sol high,
+# explorer on gpt-6-luna medium). Seeded into /data/.codex on first boot by
+# entrypoint.sh (cp -n).
+COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
 
 # Encrypted secrets (fnox.toml with age-encrypted values)
 # The age key is injected at boot via $FNOX_AGE_KEY -> ~/.config/fnox/age.txt
 COPY --chown=agent:agent fnox.toml /home/agent/fnox.toml
-
-# pi agent defaults: global AGENTS.md + settings.json (subagent model routing).
-# Seeded into /data/.pi/agent on first boot by entrypoint.sh (cp -n).
-COPY --chown=agent:agent pi/ /home/agent/pi-defaults/
 
 # Bootstraps: age key injection, persistent dir symlinks, t3 serve
 COPY --chown=agent:agent entrypoint.sh /home/agent/entrypoint.sh

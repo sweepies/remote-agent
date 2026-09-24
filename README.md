@@ -7,16 +7,16 @@ tunnel (no public Fly service).
 ## What's on the box
 
 - Ubuntu 24.04, 2 shared CPUs, 2 GB RAM, 10 GB persistent volume (`pi_data` -> `/data`)
-- [pi](https://github.com/badlogic/pi) coding agent, logged in to the ChatGPT
-  subscription (openai-codex OAuth), + `pi-subagents`, `pi-web-access`,
-  `billion-context-pi`
+- [Codex CLI](https://github.com/openai/codex) coding agent, logged in to the
+  ChatGPT subscription. Subagent model routing: `default` and `worker` on
+  `gpt-6-sol` (high reasoning), `explorer` on `gpt-6-luna` (medium)
 - T3 Code server (`t3 serve --port 3773`), linked via `t3 connect`
 - `gh`, `mise`, `age`, `fnox`, `pitchfork`, 1Password CLI
 - Secrets: age-encrypted in `fnox.toml`; the age key is injected at boot from
   the `FNOX_AGE_KEY` Fly secret into `~/.config/fnox/age.txt` (never committed)
 
 Machine restarts boot a fresh rootfs from the image, so everything that must
-survive (`.pi`, `.config`, `.t3`) lives on `/data` and is symlinked
+survive (`.codex`, `.config`, `.t3`) lives on `/data` and is symlinked
 at boot by `entrypoint.sh`.
 
 ## Auto-deploy
