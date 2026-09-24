@@ -1,6 +1,6 @@
 name: deploy
 
-on:
+"on":
   push:
     branches: [main]
 
@@ -32,4 +32,4 @@ jobs:
 
       - name: Skipped (agents working)
         if: steps.guard.outputs.busy == 'true'
-        run: echo "Deploy skipped: agent sessions are active on the box. Push again later or deploy manually."
+        run: 'echo "Deploy skipped: agent sessions are active on the box. Push again later or deploy manually."'
