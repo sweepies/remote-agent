@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 # Base dependencies
 RUN apt-get update && apt-get install -y \
-    curl git sudo ca-certificates xz-utils libatomic1 \
+    curl git sudo ca-certificates xz-utils libatomic1 bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # Agent user (no root for daily work)
