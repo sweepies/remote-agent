@@ -17,6 +17,13 @@ for d in .pi .config .t3; do
     [ ! -e ~/$d ] && ln -s /data/$d ~/$d
 done
 
+# Seed pi agent defaults (global AGENTS.md + settings.json with subagent
+# model routing) from the image on first boot. cp -n: existing volume
+# state always wins, so a pi-installed extension is never clobbered.
+mkdir -p /data/.pi/agent
+cp -n /home/agent/pi-defaults/AGENTS.md /data/.pi/agent/AGENTS.md
+cp -n /home/agent/pi-defaults/settings.json /data/.pi/agent/settings.json
+
 # Inject fnox age key from Fly secret to expected location.
 # (Zach: the key itself is injected, secrets stay encrypted in fnox.toml.)
 if [ -n "$FNOX_AGE_KEY" ]; then

@@ -36,6 +36,10 @@ RUN pi install npm:pi-subagents && \
 # The age key is injected at boot via $FNOX_AGE_KEY -> ~/.config/fnox/age.txt
 COPY --chown=agent:agent fnox.toml /home/agent/fnox.toml
 
+# pi agent defaults: global AGENTS.md + settings.json (subagent model routing).
+# Seeded into /data/.pi/agent on first boot by entrypoint.sh (cp -n).
+COPY --chown=agent:agent pi/ /home/agent/pi-defaults/
+
 # Bootstraps: age key injection, persistent dir symlinks, t3 serve
 COPY --chown=agent:agent entrypoint.sh /home/agent/entrypoint.sh
 RUN chmod +x /home/agent/entrypoint.sh
