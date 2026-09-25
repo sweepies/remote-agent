@@ -90,5 +90,27 @@ fi
 # and agent it spawns) inherits decrypted secrets.
 # --replace makes t3 PID 1 so container signals behave.
 
+# Agent busy monitor: maintains /data/.agent-busy as a signal for the CI
+# deploy guard. The guard cannot SSH into the box from GitHub Actions
+# (RAILWAY_API_TOKEN is not enough for `railway ssh`), but it can read
+# volume files. This background loop touches the marker when agent CLI
+# processes are running, removes it when idle.
+(
+  while true; do
+    busy=0
+    for re in codex claude opencode grok; do
+      if pgrep -f "$re" >/dev/null 2>&1; then busy=1; break; fi
+    done
+    if [ "$busy" = 0 ] && pgrep -x agent >/dev/null 2>&1; then busy=1; fi
+    if [ "$busy" = 1 ]; then
+      touch /data/.agent-busy 2>/dev/null || true
+    else
+      rm -f /data/.agent-busy 2>/dev/null || true
+    fi
+    sleep 30
+  done
+) &
+echo "agent busy monitor started"
+
 echo "starting t3 serve on 3773 (secrets via fnox)..."
 exec fnox exec -c /home/agent/fnox.toml --replace -- t3 serve --port 3773
