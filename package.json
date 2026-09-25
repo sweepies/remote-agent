@@ -10,8 +10,8 @@
   "name": "remote-agent-infra",
   "private": true,
   "scripts": {
-    "deploy": "alchemy deploy --yes",
-    "plan": "alchemy plan"
+    "deploy": "alchemy deploy --yes --stage production",
+    "plan": "alchemy plan --stage production"
   },
   "type": "module",
   "version": "0.0.0",
