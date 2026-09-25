@@ -1,12 +1,15 @@
-# Pinned tool versions, managed by mise and kept current by Renovate (weekly).
-# Dockerfile installs everything from this file via `mise install`.
-# 1password-cli is "latest": it is not on GitHub so Renovate cannot track it,
-# and mise pulls it from 1Password's own CDN. Renovate ignores it (see renovate.json).
+# All tools float on latest; the image picks up new versions on rebuild.
+# (Renovate no longer manages this file: there is nothing pinned to bump.
+# It still watches package.json for the alchemy deploy dependencies.)
+# 1password-cli was already latest: it is not on GitHub so Renovate cannot
+# track it, and mise pulls it from 1Password's own CDN.
 [tools]
-node = "24.21.0"
-fnox = "1.35.3"
-age = "1.3.2"
-pitchfork = "2.27.0"
-gh = "2.101.0"
-codex = "0.156.1"
+node = "latest"
+fnox = "latest"
+age = "latest"
+pitchfork = "latest"
+gh = "latest"
+codex = "latest"
 "1password-cli" = "latest"
+entire = "latest"
+bun = "latest"

@@ -16,7 +16,8 @@ WORKDIR /home/agent
 RUN curl https://mise.run | sh
 ENV PATH="/home/agent/.local/bin:/home/agent/.local/share/mise/shims:${PATH}"
 
-# All tools come from .mise.toml (pinned; Renovate bumps weekly).
+# All tools come from .mise.toml (floating on latest; the image picks up new
+# versions on rebuild).
 # NOTE on t3: intentionally not via mise. mise has no t3code backend and the
 # npm package named "t3" is an unrelated old package.
 # Official docs: t3.codes/install.sh

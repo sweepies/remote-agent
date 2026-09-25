@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@alchemy.run/frontend-frameworks": "^2.0.0-beta.79",
+    "@effect/platform-bun": "rc",
+    "@effect/platform-node": "rc",
+    "alchemy": "latest",
+    "effect": "rc"
+  },
+  "description": "Alchemy IaC for the remote-agent box on Railway. Not part of the box image.",
+  "name": "remote-agent-infra",
+  "private": true,
+  "scripts": {
+    "deploy": "alchemy deploy --yes",
+    "plan": "alchemy plan"
+  },
+  "type": "module",
+  "version": "0.0.0",
+  "devDependencies": {
+    "bun-types": "^1.4.2"
+  }
+}

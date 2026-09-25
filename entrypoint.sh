@@ -1,10 +1,24 @@
 #!/bin/bash
 set -e
 
+# Try to name this box remote-agent: T3 Connect derives the environment
+# display name from the machine hostname, and there is no rename flag
+# (pingdotgg/t3code#5623). Best-effort only; harmless if the container
+# lacks the capability. Non-fatal under set -e.
+if sudo -n hostname remote-agent 2>/dev/null; then
+    echo "hostname set to remote-agent"
+else
+    echo "could not set hostname (non-fatal), T3 may show a generated name"
+fi
+
 # Persistent storage: symlink config dirs to /data volume.
-# Fly machine restarts boot a fresh rootfs from the image, so anything that
-# must survive (codex login, t3 link credentials, fnox
-# age key) has to live under /data.
+# Railway restarts boot a fresh rootfs from the image, so anything that
+# must survive (codex login, t3 link credentials, agent
+# workdirs) has to live under /data.
+# The Railway volume mounts root-owned; take ownership so the agent user
+# can write. (sudo is NOPASSWD for agent.)
+sudo mkdir -p /data/.codex /data/.config /data/.t3
+sudo chown -R agent:agent /data
 mkdir -p /data/.codex /data/.config /data/.t3
 for d in .codex .config .t3; do
     if [ ! -L ~/$d ] && [ -d ~/$d ]; then
@@ -26,7 +40,7 @@ for f in /home/agent/codex-defaults/agents/*.toml; do
     cp -n "$f" /data/.codex/agents/
 done
 
-# Inject fnox age key from Fly secret to expected location.
+# Inject fnox age key from the Railway variable to the expected location.
 # (Zach: the key itself is injected, secrets stay encrypted in fnox.toml.)
 if [ -n "$FNOX_AGE_KEY" ]; then
     mkdir -p ~/.config/fnox
