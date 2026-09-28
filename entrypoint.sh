@@ -164,22 +164,27 @@ if [ -n "$FNOX_AGE_KEY" ]; then
         echo "WARNING: tsiam.kitty-atria.ts.net does not resolve (non-fatal)"
     fi
 
-    # AWS test-VM credential chain for the agent (on demand, short-lived):
+    # AWS test-VM credential chain for the agent (on demand, short-lived).
+    # Use the fnox lease instead of running these steps by hand:
+    #   eval "$(fnox -c /home/agent/fnox.toml lease create aws --format shell)"
+    # The lease runs bin/aws-creds.nu (`mise run aws-creds`):
     #   1. tsiam JWT (5 min): POST https://tsiam.kitty-atria.ts.net/token?resource=https://auth.maccrae.family
     #      with header "X-Tsiam: 1". In userspace mode add:
     #        curl --socks5-hostname "$TS_SOCKS5" (empty in TUN mode, so
     #        ${TS_SOCKS5:+--socks5-hostname "$TS_SOCKS5"} is a no-op there)
-    #   2. Exchange at https://auth.maccrae.family/token as client
+    #   2. Exchange at https://auth.maccrae.family/api/oidc/token as client
     #      3b6853b3-e39e-469e-9962-145b9ce285e7 (federated: tsiam subject
     #      remote-agent), grant client_credentials with client_assertion =
-    #      the tsiam JWT. Returns a 10-min Pocket ID access token.
+    #      the tsiam JWT. Returns a 10-min Pocket ID OIDC token.
     #   3. sts:AssumeRoleWithWebIdentity for
     #      arn:aws:iam::572707774253:role/remote-agent-test-vms with that
-    #      token. Role is scoped: us-west-2, t3.micro/small, AMI
-    #      ami-08205bb9c49ce7df5, resources tagged provisioned-by=remote-agent.
-    #   4. Launch: user data must be exactly "TS_AUTHKEY=<TAILSCALE_VM_AUTHKEY
-    #      from fnox>"; the VM joins the tailnet as test-vm-<instance-id>
-    #      with tag:remote-agent (ephemeral) and Tailscale SSH enabled.
+    #      token. Role is scoped: us-west-2, AMI ami-08205bb9c49ce7df5,
+    #      resources tagged provisioned-by=remote-agent.
+    # The daemon caches the lease until it expires, then re-mints.
+    # Launching a VM still needs the fnox-held TAILSCALE_VM_AUTHKEY in user
+    # data: exactly "TS_AUTHKEY=<key>". The VM joins the tailnet as
+    # test-vm-<instance-id> with tag:remote-agent (ephemeral) and Tailscale
+    # SSH enabled.
 
     # SSH to tailnet hosts: direct in TUN mode, via the local SOCKS5 proxy
     # in userspace mode. `tailscale ssh` works in both.

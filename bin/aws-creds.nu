@@ -1,0 +1,173 @@
+#!/usr/bin/env nu
+# aws-creds: mint short-lived AWS creds for the fnox `aws` lease.
+#
+# Flow: tsiam (5-min JWT) -> Pocket ID (10-min OIDC token, federated
+# client_credentials) -> STS AssumeRoleWithWebIdentity
+#     -> temporary creds for arn:aws:iam::572707774253:role/remote-agent-test-vms
+#
+# Invoked as `mise run aws-creds` (the fnox lease create_command). Prints the
+# fnox lease JSON on stdout; diagnostics go to stderr. Exits non-zero on any
+# failure. Fails loudly, no stale fallback (Zach's convention).
+#
+# Env in:  FNOX_LEASE_DURATION (seconds; requested lease length)
+#          FNOX_LEASE_LABEL (basis for the STS role session name)
+#          TS_SOCKS5 (set by entrypoint.sh in userspace-networking mode;
+#            tailnet HTTPS goes through it, public HTTPS stays direct)
+#
+# Secrets never touch argv: the tsiam JWT travels in the Pocket ID form body
+# over stdin, and the Pocket ID token reaches `aws sts` via a temp file named
+# by AWS_WEB_IDENTITY_TOKEN_FILE.
+#
+# IMPORTANT: this script must never invoke mise (directly or via shims).
+# mise evaluates task context on invocation, and this script runs inside
+# `mise run`, so calling back into mise fork-bombs:
+# mise -> script -> mise -> script ...
+# Call tools as plain PATH lookups (mise puts the real tool bin dirs on the
+# task's PATH). Shims are never used in this environment.
+
+# --- config (single place for these values) ---
+let tsiam_url = "https://tsiam.kitty-atria.ts.net"
+let pocket_id_url = "https://auth.maccrae.family"
+let client_id = "3b6853b3-e39e-469e-9962-145b9ce285e7"
+let role_arn = "arn:aws:iam::572707774253:role/remote-agent-test-vms"
+let region = "us-west-2"
+
+# --- lease parameters from fnox ---
+let requested_secs = ($env.FNOX_LEASE_DURATION? | default "3600" | into int)
+# STS AssumeRoleWithWebIdentity takes 900s..43200s; the role's default max
+# session duration is 3600s, so clamp there.
+let duration_secs = if $requested_secs < 900 { 900 } else if $requested_secs > 3600 { 3600 } else { $requested_secs }
+let session_name = ($env.FNOX_LEASE_LABEL?
+  | default "fnox-lease"
+  | str replace -r '[^a-zA-Z0-9_=,.@-]' '-'
+  | str substring 0..63)
+
+# --- ensure tooling is available ---
+for tool in [curl xh aws] {
+  if (which $tool | is-empty) {
+    print --stderr $"aws-creds: required tool not on PATH: ($tool)"
+    exit 1
+  }
+}
+
+# --- helpers ---
+# Extract one claim from a JWT payload without verifying (we only use this
+# to pick the right token and to fail loudly on unexpected claims; AWS does
+# the real signature validation).
+def jwt-claim [token: string, claim: string] {
+  try {
+    # base64url -> standard base64, then pad to a multiple of 4
+    let std = ($token | split row "." | get 1
+      | str replace -a "-" "+" | str replace -a "_" "/")
+    let padlen = (4 - (($std | str length) mod 4)) mod 4
+    let padded = if $padlen == 0 { $std } else {
+      $std ++ (0..($padlen - 1) | each { "=" } | str join "")
+    }
+    $padded | decode base64 | decode utf-8 | from json | get -o $claim
+  } catch {
+    null
+  }
+}
+
+# True when the token's aud claim names this Pocket ID client.
+def aud-ok [token: string, cid: string] {
+  let a = jwt-claim $token "aud"
+  if ($a | describe | str starts-with "list") { $cid in $a } else { $a == $cid }
+}
+
+# --- step 1: tsiam JWT (5 min), no request body ---
+# tsiam is tailnet-only: direct in TUN mode, via the SOCKS5 proxy in
+# userspace mode (no TUN interface, so system DNS can't see tailnet names).
+let socks_args = match ($env.TS_SOCKS5? | default "") {
+  "" => []
+  $s => [--socks5-hostname $s]
+}
+let tsiam_out = (do {
+  ^curl -fsS --max-time 20 ...$socks_args -H "X-Tsiam: 1" $"($tsiam_url)/token?resource=($pocket_id_url)"
+} | complete)
+if $tsiam_out.exit_code != 0 {
+  print --stderr $"aws-creds: tsiam token request failed: ($tsiam_out.stderr | str trim)"
+  exit 1
+}
+let tsiam_jwt = try {
+  $tsiam_out.stdout | from json | get access_token
+} catch {
+  print --stderr "aws-creds: tsiam response was not JSON with an access_token"
+  exit 1
+}
+if ($tsiam_jwt | is-empty) {
+  print --stderr "aws-creds: tsiam returned an empty token"
+  exit 1
+}
+
+# --- step 2: Pocket ID token (10 min) via federated client credentials ---
+# Form body goes over stdin so the JWT never appears in argv.
+let form_body = ([
+  ["grant_type" "client_credentials"]
+  ["client_id" $client_id]
+  ["client_assertion_type" "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+  ["client_assertion" $tsiam_jwt]
+  ["scope" "openid"]
+] | each {|r| $"($r.0)=($r.1 | url encode)"} | str join "&")
+let pid_out = ($form_body | ^xh --timeout 30 --ignore-stdin
+  POST $"($pocket_id_url)/api/oidc/token" "Content-Type:application/x-www-form-urlencoded" | complete)
+if $pid_out.exit_code != 0 {
+  print --stderr $"aws-creds: Pocket ID token request failed: ($pid_out.stderr | str trim)"
+  exit 1
+}
+let pid_json = try {
+  $pid_out.stdout | from json
+} catch {
+  print --stderr "aws-creds: Pocket ID response was not JSON"
+  exit 1
+}
+# Pick whichever returned token actually carries this client's audience.
+# AWS checks the token aud against the OIDC provider's client ID list, so a
+# wrong aud here means STS would reject it; fail loudly instead.
+let wid_token = (["id_token" "access_token"]
+  | each {|f| $pid_json | get -o $f | default "" }
+  | where {|t| ($t | is-not-empty) and (aud-ok $t $client_id) }
+  | get -o 0 | default "")
+if ($wid_token | is-empty) {
+  let probe = ($pid_json | get -o access_token | default "")
+  print --stderr $"aws-creds: no Pocket ID token with aud=($client_id); access_token sub was (jwt-claim $probe 'sub')"
+  exit 1
+}
+print --stderr $"aws-creds: Pocket ID token ok, sub=(jwt-claim $wid_token 'sub')"
+
+# --- step 3: STS AssumeRoleWithWebIdentity (unsigned; token via file) ---
+# mktemp files are 0600 already; the token never appears in argv.
+let tokfile = (mktemp)
+$wid_token | save -f $tokfile
+let sts_out = with-env {AWS_WEB_IDENTITY_TOKEN_FILE: $tokfile} {
+  (^aws sts assume-role-with-web-identity
+    --role-arn $role_arn
+    --role-session-name $session_name
+    --duration-seconds $duration_secs
+    --region $region
+  | complete)
+}
+rm -f $tokfile
+if $sts_out.exit_code != 0 {
+  print --stderr $"aws-creds: STS AssumeRoleWithWebIdentity failed: ($sts_out.stderr | str trim)"
+  exit 1
+}
+let creds = try {
+  $sts_out.stdout | from json | get Credentials
+} catch {
+  print --stderr "aws-creds: STS response was not JSON with Credentials"
+  exit 1
+}
+
+# --- fnox lease JSON on stdout ---
+{
+  credentials: {
+    AWS_ACCESS_KEY_ID: ($creds.AccessKeyId),
+    AWS_SECRET_ACCESS_KEY: ($creds.SecretAccessKey),
+    AWS_SESSION_TOKEN: ($creds.SessionToken),
+    AWS_REGION: $region,
+    AWS_DEFAULT_REGION: $region,
+  },
+  expires_at: ($creds.Expiration),
+  lease_id: $"aws-((date now) | format date '%Y%m%dT%H%M%S')",
+} | to json
