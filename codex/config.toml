@@ -1,4 +1,4 @@
-# Codex CLI config for the liv-pi-box.
+# Codex CLI config for remote-agent.
 # Seeded into /data/.codex/config.toml on first boot (cp -n: volume state wins,
 # so edits made through T3 are never clobbered).
 model = "gpt-6-sol"
