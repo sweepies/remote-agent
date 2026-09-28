@@ -84,7 +84,7 @@ let socks_args = match ($env.TS_SOCKS5? | default "") {
   $s => [--socks5-hostname $s]
 }
 let tsiam_out = (do {
-  ^curl -fsS --max-time 20 ...$socks_args -H "X-Tsiam: 1" $"($tsiam_url)/token?resource=($pocket_id_url)"
+  ^curl -fsS --max-time 20 -X POST ...$socks_args -H "X-Tsiam: 1" $"($tsiam_url)/token?resource=($pocket_id_url)"
 } | complete)
 if $tsiam_out.exit_code != 0 {
   print --stderr $"aws-creds: tsiam token request failed: ($tsiam_out.stderr | str trim)"
