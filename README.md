@@ -21,21 +21,18 @@ at boot by `entrypoint.sh`.
 
 ## Deploying
 
-Infrastructure is declared in `alchemy.run.ts` and deployed with
-[alchemy](https://alchemy.run): `Railway.Project` + `Railway.Service` (built
-from `./Dockerfile` via a local Docker context upload, the alchemy
-equivalent of `railway up`) + `Railway.Volume` mounted at `/data`.
+Infrastructure is declared in `alchemy.run.ts` and was provisioned with
+[alchemy](https://alchemy.run): `Railway.Project` + `Railway.Service` +
+`Railway.Volume` mounted at `/data`. Deploys are now Railway-native: the
+service is connected to this repo in the Railway dashboard and **builds the
+image from `./Dockerfile` and deploys on every push to `main`**, no GitHub
+Action involved.
 
-Pushing to `main` runs `.github/workflows/deploy.yml`:
+Note: with Railway-native deploys there is no deploy guard, so pushing to
+`main` restarts the box even if an agent session is working. Don't push
+while something is running unless you mean it.
 
-1. `scripts/deploy-guard.sh` checks the box for live agent processes (codex,
-   claude, opencode, ...) over `railway ssh` and **skips the deploy** if any
-   session is actively working, so a deploy never kills a running agent
-   mid-flight.
-2. `bun run deploy` (`alchemy deploy --yes`) reconciles the Railway
-   resources and uploads the fresh Docker context.
-
-Why not T3's own API for the guard? T3 does expose an HTTP API (its apps talk
+Why not T3's own API for a guard? T3 does expose an HTTP API (its apps talk
 to it with bearer tokens from `t3 auth session issue`), but there is no stable
 documented "list active sessions" endpoint to lean on. Live agent processes
 are the most direct signal of "a session is working right now".
@@ -56,11 +53,12 @@ secret, no GitHub App) opens PRs bumping them.
 
 ## Secrets
 
-GitHub Actions secrets used by the deploy workflow:
+Railway service variables (set in the dashboard; they persist across
+Railway-triggered deploys):
 
-- `RAILWAY_API_TOKEN` — account-level Railway token (alchemy needs workspace
-  operations; project tokens cannot create projects). Also used by the guard.
-- `FNOX_AGE_KEY` — age key for `fnox.toml`, set as a Railway variable by
-  alchemy. Never committed.
-- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` — for alchemy's state store.
-- `RENOVATE_TOKEN` — Zach's PAT, for the self-hosted Renovate workflow.
+- `FNOX_AGE_KEY` — age key for `fnox.toml`, copied into
+  `~/.config/fnox/age.txt` at boot by `entrypoint.sh`. Never committed.
+
+- `RENOVATE_TOKEN` — Zach's PAT, for the self-hosted Renovate workflow
+  (`.github/workflows/renovate.yaml`, same pattern as maccrae-infra: the
+  `renovatebot/github-action` on a Monday schedule, no GitHub App).
