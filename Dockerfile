@@ -33,8 +33,8 @@ RUN mise install
 RUN curl -fsSL https://t3.codes/install.sh | sh
 
 # codex defaults: config.toml + custom agents (default/worker on gpt-6-sol high,
-# explorer on gpt-6-luna medium). Seeded into /data/.codex on first boot by
-# entrypoint.sh (cp -n).
+# explorer on gpt-6-luna medium) + skills (aws-test-vms). Seeded into
+# /data/.codex on first boot by entrypoint.sh (cp -n).
 COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
 
 # Encrypted secrets (fnox.toml with age-encrypted values)

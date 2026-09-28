@@ -31,13 +31,19 @@ for d in .codex .config .t3; do
     [ ! -e ~/$d ] && ln -s /data/$d ~/$d
 done
 
-# Seed codex defaults (config.toml + custom agents with per-agent model
-# routing) from the image on first boot. cp -n: existing volume state always
-# wins, so edits made through T3 are never clobbered.
+# Seed codex defaults (config.toml, custom agents with per-agent model
+# routing, and skills) from the image on first boot. cp -n: existing volume
+# state always wins, so edits made through T3 are never clobbered.
 mkdir -p /data/.codex/agents
 cp -n /home/agent/codex-defaults/config.toml /data/.codex/config.toml
 for f in /home/agent/codex-defaults/agents/*.toml; do
     cp -n "$f" /data/.codex/agents/
+done
+for d in /home/agent/codex-defaults/skills/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    mkdir -p "/data/.codex/skills/$name"
+    cp -n "$d/SKILL.md" "/data/.codex/skills/$name/SKILL.md"
 done
 
 # Inject fnox age key from the Railway variable to the expected location.
