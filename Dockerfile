@@ -2,8 +2,13 @@ FROM ubuntu:24.04
 
 # Base dependencies
 RUN apt-get update && apt-get install -y \
-    curl git sudo ca-certificates xz-utils libatomic1 bubblewrap \
+    curl git sudo ca-certificates xz-utils libatomic1 bubblewrap netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
+
+# Tailscale (tailnet access: tsiam token minting for the AWS flow, SSH to test VMs)
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg && \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list -o /etc/apt/sources.list.d/tailscale.list && \
+    apt-get update && apt-get install -y tailscale && rm -rf /var/lib/apt/lists/*
 
 # Agent user (no root for daily work)
 RUN useradd -m -s /bin/bash agent && \

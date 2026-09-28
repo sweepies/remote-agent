@@ -90,6 +90,74 @@ fi
 # and agent it spawns) inherits decrypted secrets.
 # --replace makes t3 PID 1 so container signals behave.
 
+# Tailscale: join the tailnet as tag:remote-agent so the box can mint tsiam
+# tokens (tsiam -> Pocket ID -> AWS STS for test VMs) and reach those VMs
+# over the tailnet. State persists on /data so the node identity survives
+# restarts and re-auth is rare. Railway containers usually lack /dev/net/tun,
+# so fall back to userspace networking with a local SOCKS5 proxy and route
+# tailnet SSH through it. Non-fatal under set -e: every step is guarded.
+if [ -n "$FNOX_AGE_KEY" ]; then
+    sudo mkdir -p /data/tailscale
+    sudo chown -R agent:agent /data/tailscale
+    sudo ln -sfn /data/tailscale /var/lib/tailscale
+
+    TS_MODE="tun"
+    if [ ! -c /dev/net/tun ]; then
+        TS_MODE="userspace"
+    fi
+    echo "tailscale mode: $TS_MODE"
+
+    if ! pgrep -x tailscaled >/dev/null 2>&1; then
+        if [ "$TS_MODE" = "tun" ]; then
+            sudo tailscaled >/data/tailscale/tailscaled.log 2>&1 &
+        else
+            sudo tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:1055 >/data/tailscale/tailscaled.log 2>&1 &
+        fi
+        for i in $(seq 1 30); do
+            if [ -S /var/run/tailscale/tailscaled.sock ]; then
+                break
+            fi
+            sleep 1
+        done
+    fi
+
+    if sudo tailscale status >/dev/null 2>&1; then
+        echo "tailscale already up"
+    else
+        if TS_AUTHKEY="$(fnox exec -c /home/agent/fnox.toml -- sh -c 'printf %s "$TAILSCALE_AUTHKEY"' 2>/dev/null)" && [ -n "$TS_AUTHKEY" ]; then
+            echo "joining tailnet as remote-agent..."
+            if sudo tailscale up --authkey="$TS_AUTHKEY" --hostname=remote-agent --accept-dns=true; then
+                echo "tailscale up"
+            else
+                echo "WARNING: tailscale up failed (non-fatal), continuing boot"
+            fi
+        else
+            echo "WARNING: TAILSCALE_AUTHKEY unavailable, skipping tailscale up (non-fatal)"
+        fi
+        unset TS_AUTHKEY
+    fi
+
+    # The AWS flow depends on this name resolving.
+    if getent hosts tsiam.kitty-atria.ts.net >/dev/null 2>&1; then
+        echo "tailnet DNS ok: tsiam.kitty-atria.ts.net resolves"
+    else
+        echo "WARNING: tsiam.kitty-atria.ts.net does not resolve (non-fatal)"
+    fi
+
+    # SSH to tailnet hosts: direct in TUN mode, via the local SOCKS5 proxy
+    # in userspace mode. `tailscale ssh` works in both.
+    mkdir -p ~/.ssh
+    if [ "$TS_MODE" = "userspace" ] && ! grep -q "kitty-atria.ts.net" ~/.ssh/config 2>/dev/null; then
+        cat >> ~/.ssh/config <<'EOF'
+Host *.kitty-atria.ts.net
+    ProxyCommand nc -X 5 -x 127.0.0.1:1055 %h %p
+EOF
+        echo "tailnet SSH will use the local SOCKS5 proxy"
+    fi
+else
+    echo "WARNING: FNOX_AGE_KEY not set, skipping tailscale (non-fatal)"
+fi
+
 # Agent busy monitor: maintains /data/.agent-busy as a signal for the CI
 # deploy guard. The guard cannot SSH into the box from GitHub Actions
 # (RAILWAY_API_TOKEN is not enough for `railway ssh`), but it can read
