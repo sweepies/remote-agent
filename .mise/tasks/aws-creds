@@ -110,7 +110,7 @@ let form_body = ([
   ["client_assertion" $tsiam_jwt]
   ["scope" "openid"]
 ] | each {|r| $"($r.0)=($r.1 | url encode)"} | str join "&")
-let pid_out = ($form_body | ^xh --timeout 30 --ignore-stdin
+let pid_out = ($form_body | ^xh --timeout 30
   POST $"($pocket_id_url)/api/oidc/token" "Content-Type:application/x-www-form-urlencoded" | complete)
 if $pid_out.exit_code != 0 {
   print --stderr $"aws-creds: Pocket ID token request failed: ($pid_out.stderr | str trim)"
