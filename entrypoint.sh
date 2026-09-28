@@ -166,7 +166,7 @@ if [ -n "$FNOX_AGE_KEY" ]; then
 
     # AWS test-VM credential chain for the agent (on demand, short-lived).
     # Use the fnox lease instead of running these steps by hand:
-    #   eval "$(fnox -c /home/agent/fnox.toml lease create aws --format shell)"
+    #   eval "$(fnox lease create aws --format shell)"
     # The lease runs bin/aws-creds.nu (`mise run aws-creds`):
     #   1. tsiam JWT (5 min): POST https://tsiam.kitty-atria.ts.net/token?resource=https://auth.maccrae.family
     #      with header "X-Tsiam: 1". In userspace mode add:

@@ -1,4 +1,5 @@
 #!/usr/bin/env nu
+#MISE description="Mint short-lived AWS test-VM creds (tsiam -> Pocket ID -> STS); backing command for the fnox aws lease"
 # aws-creds: mint short-lived AWS creds for the fnox `aws` lease.
 #
 # Flow: tsiam (5-min JWT) -> Pocket ID (10-min OIDC token, federated

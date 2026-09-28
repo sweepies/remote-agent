@@ -17,7 +17,3 @@ railway = "latest"
 nushell = "latest"
 xh = "latest"
 "aws-cli" = "latest"
-
-[tasks.aws-creds]
-description = "Mint short-lived AWS test-VM creds (tsiam -> Pocket ID -> STS); backing command for the fnox aws lease"
-run = "nu {{config_root}}/bin/aws-creds.nu"

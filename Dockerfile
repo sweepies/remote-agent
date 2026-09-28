@@ -41,9 +41,9 @@ COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
 # The age key is injected at boot via $FNOX_AGE_KEY -> ~/.config/fnox/age.txt
 COPY --chown=agent:agent fnox.toml /home/agent/fnox.toml
 
-# nu script backing the fnox `aws` lease (`mise run aws-creds` mints
+# nu script backing the fnox `aws` lease (mise file task `aws-creds` mints
 # short-lived test-VM creds via tsiam -> Pocket ID -> STS)
-COPY --chown=agent:agent bin/ /home/agent/bin/
+COPY --chown=agent:agent .mise/ /home/agent/.mise/
 
 # Bootstraps: age key injection, persistent dir symlinks, t3 serve
 COPY --chown=agent:agent entrypoint.sh /home/agent/entrypoint.sh

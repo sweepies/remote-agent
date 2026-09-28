@@ -18,10 +18,11 @@ TAILSCALE_VM_AUTHKEY= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxC
 # Decrypted by fnox exec and persisted to gh's auth file at boot by
 # entrypoint.sh (gh's file auth, since T3 ignores env-var tokens).
 
-# Short-lived AWS creds for test VMs. `fnox lease create aws` runs
-# bin/aws-creds.nu (via `mise run aws-creds`) and emits AWS_ACCESS_KEY_ID /
-# AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN (+ AWS_REGION). The daemon caches
-# the lease until expires_at, then re-mints on the next request.
+# Short-lived AWS creds for test VMs. `fnox lease create aws` runs the
+# `aws-creds` mise file task (.mise/tasks/aws-creds) and emits
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN (+
+# AWS_REGION). The daemon caches the lease until expires_at, then re-mints
+# on the next request.
 # Chain: tsiam JWT (5 min) -> Pocket ID OIDC (10 min, federated
 # client_credentials for the remote-agent-aws client) -> STS
 # AssumeRoleWithWebIdentity for role/remote-agent-test-vms (us-west-2 only,
@@ -29,6 +30,6 @@ TAILSCALE_VM_AUTHKEY= { provider = "age", value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxC
 # provisioned-by=remote-agent). No revocation: STS sessions just expire.
 [leases.aws]
 type = "command"
-create_command = "mise --cd /home/agent run aws-creds"
+create_command = "mise run aws-creds"
 duration = "1h"
 timeout = "90s"
