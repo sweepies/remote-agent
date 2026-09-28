@@ -99,6 +99,11 @@ fi
 if [ -n "$FNOX_AGE_KEY" ]; then
     sudo mkdir -p /data/tailscale
     sudo chown -R agent:agent /data/tailscale
+    # ln -sfn alone won't replace a real directory (it would nest the link
+    # inside it), so remove a non-symlink /var/lib/tailscale first.
+    if [ -e /var/lib/tailscale ] && [ ! -L /var/lib/tailscale ]; then
+        sudo rm -rf /var/lib/tailscale
+    fi
     sudo ln -sfn /data/tailscale /var/lib/tailscale
 
     TS_MODE="tun"
@@ -106,6 +111,14 @@ if [ -n "$FNOX_AGE_KEY" ]; then
         TS_MODE="userspace"
     fi
     echo "tailscale mode: $TS_MODE"
+    # In userspace mode there is no TUN interface, so tailnet traffic
+    # (tsiam, VM SSH) must go through this SOCKS5 proxy. Exported so the
+    # agent's shell inherits it; empty in TUN mode.
+    if [ "$TS_MODE" = "userspace" ]; then
+        export TS_SOCKS5="127.0.0.1:1055"
+    else
+        export TS_SOCKS5=""
+    fi
 
     if ! pgrep -x tailscaled >/dev/null 2>&1; then
         if [ "$TS_MODE" = "tun" ]; then
@@ -137,12 +150,36 @@ if [ -n "$FNOX_AGE_KEY" ]; then
         unset TS_AUTHKEY
     fi
 
-    # The AWS flow depends on this name resolving.
-    if getent hosts tsiam.kitty-atria.ts.net >/dev/null 2>&1; then
+    # tsiam reachability: direct DNS in TUN mode, SOCKS5 in userspace mode
+    # (no TUN interface means system DNS can't see tailnet names).
+    if [ "$TS_MODE" = "userspace" ]; then
+        if curl -sf --max-time 10 --socks5-hostname 127.0.0.1:1055 -o /dev/null https://tsiam.kitty-atria.ts.net/.well-known/jwks.json; then
+            echo "tailnet ok: tsiam reachable via SOCKS5"
+        else
+            echo "WARNING: tsiam.kitty-atria.ts.net not reachable via SOCKS5 (non-fatal)"
+        fi
+    elif getent hosts tsiam.kitty-atria.ts.net >/dev/null 2>&1; then
         echo "tailnet DNS ok: tsiam.kitty-atria.ts.net resolves"
     else
         echo "WARNING: tsiam.kitty-atria.ts.net does not resolve (non-fatal)"
     fi
+
+    # AWS test-VM credential chain for the agent (on demand, short-lived):
+    #   1. tsiam JWT (5 min): POST https://tsiam.kitty-atria.ts.net/token?resource=https://auth.maccrae.family
+    #      with header "X-Tsiam: 1". In userspace mode add:
+    #        curl --socks5-hostname "$TS_SOCKS5" (empty in TUN mode, so
+    #        ${TS_SOCKS5:+--socks5-hostname "$TS_SOCKS5"} is a no-op there)
+    #   2. Exchange at https://auth.maccrae.family/token as client
+    #      3b6853b3-e39e-469e-9962-145b9ce285e7 (federated: tsiam subject
+    #      remote-agent), grant client_credentials with client_assertion =
+    #      the tsiam JWT. Returns a 10-min Pocket ID access token.
+    #   3. sts:AssumeRoleWithWebIdentity for
+    #      arn:aws:iam::572707774253:role/remote-agent-test-vms with that
+    #      token. Role is scoped: us-west-2, t3.micro/small, AMI
+    #      ami-08205bb9c49ce7df5, resources tagged provisioned-by=remote-agent.
+    #   4. Launch: user data must be exactly "TS_AUTHKEY=<TAILSCALE_VM_AUTHKEY
+    #      from fnox>"; the VM joins the tailnet as test-vm-<instance-id>
+    #      with tag:remote-agent (ephemeral) and Tailscale SSH enabled.
 
     # SSH to tailnet hosts: direct in TUN mode, via the local SOCKS5 proxy
     # in userspace mode. `tailscale ssh` works in both.
