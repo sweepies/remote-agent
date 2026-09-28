@@ -156,19 +156,11 @@ if [ -n "$FNOX_AGE_KEY" ]; then
         unset TS_AUTHKEY
     fi
 
-    # tsiam reachability: direct DNS in TUN mode, SOCKS5 in userspace mode
-    # (no TUN interface means system DNS can't see tailnet names).
-    if [ "$TS_MODE" = "userspace" ]; then
-        if curl -sf --max-time 10 --socks5-hostname 127.0.0.1:1055 -o /dev/null https://tsiam.kitty-atria.ts.net/.well-known/jwks.json; then
-            echo "tailnet ok: tsiam reachable via SOCKS5"
-        else
-            echo "WARNING: tsiam.kitty-atria.ts.net not reachable via SOCKS5 (non-fatal)"
-        fi
-    elif getent hosts tsiam.kitty-atria.ts.net >/dev/null 2>&1; then
-        echo "tailnet DNS ok: tsiam.kitty-atria.ts.net resolves"
-    else
-        echo "WARNING: tsiam.kitty-atria.ts.net does not resolve (non-fatal)"
-    fi
+    # Note: no boot-time tsiam reachability check. The AWS lease is on-demand
+    # (fnox `aws` profile), so nothing at boot depends on tsiam; a check here
+    # only false-positives while the fresh daemon handshakes. If the tailnet
+    # path is broken, `mise run aws-creds` fails loudly when creds are
+    # actually minted.
 
     # AWS test-VM credential chain for the agent (on demand, short-lived).
     # Use the fnox lease instead of running these steps by hand:
