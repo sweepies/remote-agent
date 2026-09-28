@@ -136,19 +136,23 @@ if ($wid_token | is-empty) {
 }
 print --stderr $"aws-creds: Pocket ID token ok, sub=(jwt-claim $wid_token 'sub')"
 
-# --- step 3: STS AssumeRoleWithWebIdentity (unsigned; token via file) ---
-# mktemp files are 0600 already; the token never appears in argv.
-let tokfile = (mktemp)
-$wid_token | save -f $tokfile
-let sts_out = with-env {AWS_WEB_IDENTITY_TOKEN_FILE: $tokfile} {
-  (^aws sts assume-role-with-web-identity
-    --role-arn $role_arn
-    --role-session-name $session_name
-    --duration-seconds $duration_secs
-    --region $region
-  | complete)
-}
-rm -f $tokfile
+# --- step 3: STS AssumeRoleWithWebIdentity ---
+# aws-cli will not read AWS_WEB_IDENTITY_TOKEN_FILE for this subcommand; it
+# requires --web-identity-token. Pass the whole input as JSON via a temp file
+# (0600 from mktemp) so the token never appears in argv.
+let cli_input = {
+  RoleArn: $role_arn,
+  RoleSessionName: $session_name,
+  DurationSeconds: $duration_secs,
+  WebIdentityToken: <redacted>,
+} | to json
+let jsonfile = (mktemp)
+$cli_input | save -f $jsonfile
+let sts_out = (^aws sts assume-role-with-web-identity
+  --cli-input-json $"file://($jsonfile)"
+  --region $region
+| complete)
+rm -f $jsonfile
 if $sts_out.exit_code != 0 {
   print --stderr $"aws-creds: STS AssumeRoleWithWebIdentity failed: ($sts_out.stderr | str trim)"
   exit 1
