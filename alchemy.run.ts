@@ -22,9 +22,11 @@ import * as Redacted from "effect/Redacted";
  *
  * Required env:
  * - RAILWAY_API_TOKEN: account-level Railway token (workspace operations;
- *   project tokens cannot create projects).
+ *   project tokens cannot create projects). In CI this comes from the token
+ *   broker (GitHub OIDC -> Pocket ID -> broker.ops.sweepy.dev).
  * - FNOX_AGE_KEY: age key for fnox.toml, injected as a Railway variable.
- * - CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: for the state store.
+ * - CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: for the state store
+ *   (token from the broker in CI, account ID from fnox.toml).
  * - CI=true on CI runners.
  */
 const FNOX_AGE_KEY = Redacted.make(Bun.env.FNOX_AGE_KEY ?? "");

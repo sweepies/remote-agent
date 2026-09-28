@@ -5,14 +5,14 @@
     "": {
       "name": "remote-agent-infra",
       "dependencies": {
-        "@alchemy.run/frontend-frameworks": "^2.0.0-beta.79",
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
         "@effect/platform-bun": "rc",
         "@effect/platform-node": "rc",
         "alchemy": "latest",
         "effect": "rc",
       },
       "devDependencies": {
-        "bun-types": "^1.4.2",
+        "bun-types": "1.4.2",
       },
     },
   },
