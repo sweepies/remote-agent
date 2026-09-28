@@ -25,8 +25,9 @@ import * as Redacted from "effect/Redacted";
  *   project tokens cannot create projects). In CI this comes from the token
  *   broker (GitHub OIDC -> Pocket ID -> broker.ops.sweepy.dev).
  * - FNOX_AGE_KEY: age key for fnox.toml, injected as a Railway variable.
- * - CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: for the state store
- *   (token from the broker in CI, account ID from fnox.toml).
+ * - CLOUDFLARE_API_TOKEN: for the state store (from the broker in CI).
+ *   NOTE: CLOUDFLARE_ACCOUNT_ID was removed from fnox.toml (Sep 28 2026);
+ *   alchemy runs need it in the environment again if revived.
  * - CI=true on CI runners.
  */
 const FNOX_AGE_KEY = Redacted.make(Bun.env.FNOX_AGE_KEY ?? "");
