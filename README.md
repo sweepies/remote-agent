@@ -9,7 +9,7 @@ tunnel (no public ingress).
 - Ubuntu 24.04 on Railway, persistent volume (`remote-agent-data` -> `/data`)
 - [Codex CLI](https://github.com/openai/codex) coding agent, logged in to the
   ChatGPT subscription. Subagent model routing: `default` and `worker` on
-  `gpt-6-sol` (high reasoning), `explorer` on `gpt-6-luna` (medium)
+  `gpt-6.1-sol` (high reasoning), `explorer` on `gpt-6-luna` (medium)
 - T3 Code server (`t3 serve --port 3773`), linked via `t3 connect`
 - `gh`, `mise`, `age`, `fnox`, `pitchfork`, 1Password CLI, Entire CLI, bun
 - Secrets: age-encrypted in `fnox.toml`; the age key is injected at boot from

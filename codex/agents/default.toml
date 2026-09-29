@@ -2,7 +2,7 @@
 # name takes precedence over the built-in).
 name = "default"
 description = "General-purpose fallback agent."
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 developer_instructions = """
 You are the default general-purpose coding agent. Handle whatever the parent

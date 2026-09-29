@@ -32,7 +32,7 @@ RUN mise install
 # T3 Code CLI via official installer (self-contained binary, no Node needed)
 RUN curl -fsSL https://t3.codes/install.sh | sh
 
-# codex defaults: config.toml + custom agents (default/worker on gpt-6-sol high,
+# codex defaults: config.toml + custom agents (default/worker on gpt-6.1-sol high,
 # explorer on gpt-6-luna medium) + skills (aws-test-vms). Seeded into
 # /data/.codex on first boot by entrypoint.sh (cp -n).
 COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
