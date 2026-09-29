@@ -9,7 +9,10 @@ fnox = "latest"
 age = "latest"
 pitchfork = "latest"
 gh = "latest"
-codex = "latest"
+# codex pinned: gpt-6.1-sol requires CLI >= 0.159.1, and mise's
+# minimum_release_age hides it from "latest" for a few days after release.
+# Relax back to "latest" once 0.159.1 ages past the threshold.
+codex = "0.159.1"
 "1password-cli" = "latest"
 entire = "latest"
 bun = "latest"
