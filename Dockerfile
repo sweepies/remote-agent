@@ -30,7 +30,13 @@ COPY --chown=agent:agent .mise.toml /home/agent/.mise.toml
 RUN mise install
 
 # T3 Code CLI via official installer (self-contained binary, no Node needed)
-RUN curl -fsSL https://t3.codes/install.sh | sh
+# NOTE: the installer symlinks ~/.local/bin/t3 to a versioned path under
+# ~/.t3, but the entrypoint moves ~/.t3 to the persistent volume on first
+# boot. When the image ships a newer t3 than the volume has, that symlink
+# dangles and boot fails. Keep a real copy of the binary at a stable path.
+RUN curl -fsSL https://t3.codes/install.sh | sh && \
+    cp "$(readlink -f /home/agent/.local/bin/t3)" /home/agent/.local/bin/t3-bin && \
+    ln -sfn /home/agent/.local/bin/t3-bin /home/agent/.local/bin/t3
 
 # codex defaults: config.toml + custom agents (default/worker on gpt-6.1-sol high,
 # explorer on gpt-6-luna medium) + skills (aws-test-vms). Seeded into
