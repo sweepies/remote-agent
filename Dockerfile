@@ -41,7 +41,7 @@ RUN curl -fsSL https://t3.codes/install.sh | sh && \
     cp -r "/home/agent/.t3/runtime/versions/$t3_ver" /home/agent/.t3-stable/ && \
     ln -sfn "/home/agent/.t3-stable/$t3_ver/t3" /home/agent/.local/bin/t3
 
-# codex defaults: config.toml + custom agents (default/worker on gpt-6-sol high,
+# codex defaults: config.toml + custom agents (default/worker on gpt-6.1-sol high,
 # explorer on gpt-6-luna medium) + skills (aws-test-vms). Seeded into
 # /data/.codex on first boot by entrypoint.sh (cp -n).
 COPY --chown=agent:agent codex/ /home/agent/codex-defaults/

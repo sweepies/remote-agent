@@ -2,7 +2,7 @@
 # name takes precedence over the built-in).
 name = "worker"
 description = "Execution-focused agent for implementation and fixes."
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 developer_instructions = """
 You are an execution-focused worker agent. Implement the task you are given,
