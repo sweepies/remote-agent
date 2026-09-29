@@ -1,9 +1,9 @@
 #!/usr/bin/env nu
-#MISE description="Mint short-lived AWS test-VM creds (tsiam -> Pocket ID -> STS); backing command for the fnox aws lease"
+#MISE description="Mint short-lived AWS test-VM creds (K8s SA -> OpenBao -> STS); backing command for the fnox aws lease"
 # aws-creds: mint short-lived AWS creds for the fnox `aws` lease.
 #
-# Flow: tsiam (5-min JWT) -> Pocket ID (10-min OIDC token, federated
-# client_credentials) -> STS AssumeRoleWithWebIdentity
+# Flow: Kubernetes ServiceAccount token -> OpenBao K8s auth
+#     -> OpenBao OIDC ID token -> STS AssumeRoleWithWebIdentity
 #     -> temporary creds for arn:aws:iam::572707774253:role/remote-agent-test-vms
 #
 # Invoked as `mise run aws-creds` (the fnox lease create_command). Prints the
@@ -12,12 +12,9 @@
 #
 # Env in:  FNOX_LEASE_DURATION (seconds; requested lease length)
 #          FNOX_LEASE_LABEL (basis for the STS role session name)
-#          TS_SOCKS5 (set by entrypoint.sh in userspace-networking mode;
-#            tailnet HTTPS goes through it, public HTTPS stays direct)
 #
-# Secrets never touch argv: the tsiam JWT travels in the Pocket ID form body
-# over stdin, and the Pocket ID token reaches `aws sts` via a temp file named
-# by AWS_WEB_IDENTITY_TOKEN_FILE.
+# Secrets never touch argv: the SA token travels in the OpenBao login body,
+# and the OIDC token reaches `aws sts` via a temp file.
 #
 # IMPORTANT: this script must never invoke mise (directly or via shims).
 # mise evaluates task context on invocation, and this script runs inside
@@ -27,9 +24,9 @@
 # task's PATH). Shims are never used in this environment.
 
 # --- config (single place for these values) ---
-let tsiam_url = "https://tsiam.kitty-atria.ts.net"
-let pocket_id_url = "https://auth.maccrae.family"
-let client_id = "3b6853b3-e39e-469e-9962-145b9ce285e7"
+let openbao_url = "https://openbao.internal.maccrae.family"
+let k8s_role = "remote-agent-aws"
+let oidc_role = "remote-agent-aws"
 let role_arn = "arn:aws:iam::572707774253:role/remote-agent-test-vms"
 let region = "us-west-2"
 
@@ -44,107 +41,74 @@ let session_name = ($env.FNOX_LEASE_LABEL?
   | str substring 0..63)
 
 # --- ensure tooling is available ---
-for tool in [curl xh aws] {
+for tool in [curl aws] {
   if (which $tool | is-empty) {
     print --stderr $"aws-creds: required tool not on PATH: ($tool)"
     exit 1
   }
 }
 
-# --- helpers ---
-# Extract one claim from a JWT payload without verifying (we only use this
-# to pick the right token and to fail loudly on unexpected claims; AWS does
-# the real signature validation).
-def jwt-claim [token: string, claim: string] {
-  try {
-    # base64url -> standard base64, then pad to a multiple of 4
-    let std = ($token | split row "." | get 1
-      | str replace -a "-" "+" | str replace -a "_" "/")
-    let padlen = (4 - (($std | str length) mod 4)) mod 4
-    let padded = if $padlen == 0 { $std } else {
-      $std ++ (0..($padlen - 1) | each { "=" } | str join "")
-    }
-    $padded | decode base64 | decode utf-8 | from json | get -o $claim
-  } catch {
-    null
-  }
+# --- step 1: read the mounted ServiceAccount token ---
+let sa_token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+if not ($sa_token_path | path exists) {
+  print --stderr $"aws-creds: no ServiceAccount token at ($sa_token_path); not running in-cluster?"
+  exit 1
+}
+let sa_token = (open $sa_token_path | str trim)
+if ($sa_token | is-empty) {
+  print --stderr "aws-creds: ServiceAccount token is empty"
+  exit 1
 }
 
-# True when the token's aud claim names this Pocket ID client.
-def aud-ok [token: string, cid: string] {
-  let a = jwt-claim $token "aud"
-  if ($a | describe | str starts-with "list") { $cid in $a } else { $a == $cid }
-}
-
-# --- step 1: tsiam JWT (5 min), no request body ---
-# tsiam is tailnet-only: direct in TUN mode, via the SOCKS5 proxy in
-# userspace mode (no TUN interface, so system DNS can't see tailnet names).
-let socks_args = match ($env.TS_SOCKS5? | default "") {
-  "" => []
-  $s => [--socks5-hostname $s]
-}
-let tsiam_out = (do {
-  ^curl -fsS --max-time 20 -X POST ...$socks_args -H "X-Tsiam: 1" $"($tsiam_url)/token?resource=($pocket_id_url)"
+# --- step 2: OpenBao K8s auth ---
+# SA token travels in the JSON body, never in argv.
+let login_body = { jwt: $sa_token, role: $k8s_role } | to json
+let login_out = (do {
+  $login_body | ^curl -fsS --max-time 20 -X POST -H "Content-Type: application/json" -d @- $"($openbao_url)/v1/auth/kubernetes/login"
 } | complete)
-if $tsiam_out.exit_code != 0 {
-  print --stderr $"aws-creds: tsiam token request failed: ($tsiam_out.stderr | str trim)"
+if $login_out.exit_code != 0 {
+  print --stderr $"aws-creds: OpenBao K8s login failed: ($login_out.stderr | str trim)"
   exit 1
 }
-let tsiam_jwt = try {
-  $tsiam_out.stdout | from json | get access_token
+let vault_token = try {
+  $login_out.stdout | from json | get auth.client_token
 } catch {
-  print --stderr "aws-creds: tsiam response was not JSON with an access_token"
+  print --stderr "aws-creds: OpenBao login response was not JSON with auth.client_token"
   exit 1
 }
-if ($tsiam_jwt | is-empty) {
-  print --stderr "aws-creds: tsiam returned an empty token"
+if ($vault_token | is-empty) {
+  print --stderr "aws-creds: OpenBao returned an empty client token"
   exit 1
 }
 
-# --- step 2: Pocket ID token (10 min) via federated client credentials ---
-# Form body goes over stdin so the JWT never appears in argv.
-let form_body = ([
-  ["grant_type" "client_credentials"]
-  ["client_id" $client_id]
-  ["client_assertion_type" "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
-  ["client_assertion" $tsiam_jwt]
-  ["scope" "openid"]
-] | each {|r| $"($r.0)=($r.1 | url encode)"} | str join "&")
-let pid_out = ($form_body | ^xh --timeout 30
-  POST $"($pocket_id_url)/api/oidc/token" "Content-Type:application/x-www-form-urlencoded" | complete)
-if $pid_out.exit_code != 0 {
-  print --stderr $"aws-creds: Pocket ID token request failed: ($pid_out.stderr | str trim)"
+# --- step 3: OpenBao OIDC ID token for AWS ---
+let oidc_out = (do {
+  ^curl -fsS --max-time 20 -H $"X-Vault-Token: ($vault_token)" $"($openbao_url)/v1/identity/oidc/token/($oidc_role)"
+} | complete)
+if $oidc_out.exit_code != 0 {
+  print --stderr $"aws-creds: OpenBao OIDC token request failed: ($oidc_out.stderr | str trim)"
   exit 1
 }
-let pid_json = try {
-  $pid_out.stdout | from json
+let wid_token = try {
+  $oidc_out.stdout | from json | get data.token
 } catch {
-  print --stderr "aws-creds: Pocket ID response was not JSON"
+  print --stderr "aws-creds: OpenBao OIDC response was not JSON with data.token"
   exit 1
 }
-# Pick whichever returned token actually carries this client's audience.
-# AWS checks the token aud against the OIDC provider's client ID list, so a
-# wrong aud here means STS would reject it; fail loudly instead.
-let wid_token = (["id_token" "access_token"]
-  | each {|f| $pid_json | get -o $f | default "" }
-  | where {|t| ($t | is-not-empty) and (aud-ok $t $client_id) }
-  | get -o 0 | default "")
 if ($wid_token | is-empty) {
-  let probe = ($pid_json | get -o access_token | default "")
-  print --stderr $"aws-creds: no Pocket ID token with aud=($client_id); access_token sub was (jwt-claim $probe 'sub')"
+  print --stderr "aws-creds: OpenBao returned an empty OIDC token"
   exit 1
 }
-print --stderr $"aws-creds: Pocket ID token ok, sub=(jwt-claim $wid_token 'sub')"
+print --stderr "aws-creds: OpenBao OIDC token ok"
 
-# --- step 3: STS AssumeRoleWithWebIdentity ---
-# aws-cli will not read AWS_WEB_IDENTITY_TOKEN_FILE for this subcommand; it
-# requires --web-identity-token. Pass the whole input as JSON via a temp file
-# (0600 from mktemp) so the token never appears in argv.
+# --- step 4: STS AssumeRoleWithWebIdentity ---
+# Pass the whole input as JSON via a temp file (0600 from mktemp) so the
+# token never appears in argv.
 let cli_input = {
   RoleArn: $role_arn,
   RoleSessionName: $session_name,
   DurationSeconds: $duration_secs,
-  WebIdentityToken: <redacted>,
+  WebIdentityToken: $wid_token,
 } | to json
 let jsonfile = (mktemp)
 $cli_input | save -f $jsonfile
