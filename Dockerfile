@@ -42,8 +42,8 @@ RUN curl -fsSL https://t3.codes/install.sh | sh && \
     ln -sfn "/home/agent/.t3-stable/$t3_ver/t3" /home/agent/.local/bin/t3
 
 # codex defaults: config.toml + custom agents (default/worker on gpt-6.1-sol high,
-# explorer on gpt-6-luna medium) + skills (aws-test-vms). Seeded into
-# /data/.codex on first boot by entrypoint.sh (cp -n).
+# explorer on gpt-6-luna medium) + versioned skills. Seeded into
+# /data/.codex on first boot by entrypoint.sh (cp -rn, volume wins).
 COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
 
 # Encrypted secrets (fnox.toml with age-encrypted values)

@@ -32,8 +32,10 @@ for d in .codex .config .t3; do
 done
 
 # Seed codex defaults (config.toml, custom agents with per-agent model
-# routing, and skills) from the image on first boot. cp -n: existing volume
-# state always wins, so edits made through T3 are never clobbered.
+# routing, and skills) from the image on first boot. cp -rn (recursive,
+# no-clobber): existing volume state always wins, so edits made through T3
+# are never clobbered, and multi-file skills (e.g. agents/openai.yaml)
+# land whole.
 mkdir -p /data/.codex/agents
 cp -n /home/agent/codex-defaults/config.toml /data/.codex/config.toml
 for f in /home/agent/codex-defaults/agents/*.toml; do
@@ -43,7 +45,7 @@ for d in /home/agent/codex-defaults/skills/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"
     mkdir -p "/data/.codex/skills/$name"
-    cp -n "$d/SKILL.md" "/data/.codex/skills/$name/SKILL.md"
+    cp -rn "$d/." "/data/.codex/skills/$name/"
 done
 
 # Inject fnox age key from the Railway variable to the expected location.
