@@ -21,5 +21,6 @@ jobs:
     with:
       deployment_profile: bun-fnox
       secret_source: fnox
+      cloudflare_account_id: ea30263a65e823508797117cd5f89ad6
     secrets:
       FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
