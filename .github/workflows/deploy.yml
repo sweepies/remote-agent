@@ -1,0 +1,25 @@
+name: deploy
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Alchemy state is shared across runs; deploy one revision at a time.
+# The deploy guard inside `bun run deploy` skips while the box is busy.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: sweepies/ops-workflows/.github/workflows/alchemy-deployer-broker-auth.yml@main
+    with:
+      deployment_profile: bun-fnox
+      secret_source: fnox
+    secrets:
+      FNOX_AGE_KEY: ${{ secrets.FNOX_AGE_KEY }}
