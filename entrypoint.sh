@@ -17,10 +17,10 @@ fi
 # workdirs) has to live under /data.
 # The Railway volume mounts root-owned; take ownership so the agent user
 # can write. (sudo is NOPASSWD for agent.)
-sudo mkdir -p /data/.codex /data/.config /data/.t3
+sudo mkdir -p /data/.codex /data/.config /data/.t3 /data/.pi
 sudo chown -R agent:agent /data
-mkdir -p /data/.codex /data/.config /data/.t3
-for d in .codex .config .t3; do
+mkdir -p /data/.codex /data/.config /data/.t3 /data/.pi
+for d in .codex .config .t3 .pi; do
     if [ ! -L ~/$d ] && [ -d ~/$d ]; then
         # Move existing dir to volume if volume is empty
         if [ -z "$(ls -A /data/$d 2>/dev/null)" ]; then
@@ -47,6 +47,75 @@ for d in /home/agent/codex-defaults/skills/*/; do
     mkdir -p "/data/.codex/skills/$name"
     cp -rn "$d/." "/data/.codex/skills/$name/"
 done
+
+# Pi settings: merge Zach's dotfiles agent config (image defaults at
+# /home/agent/pi-defaults/settings.json) into the persistent volume config.
+# Merge rules: seed wins for scalar keys, packages are union-merged,
+# volume-only keys are preserved. Auth safety: if the seed wants the
+# "openai" provider but no OPENAI_API_KEY is available, keep the volume's
+# existing provider/model so pi keeps working on its current auth
+# (openai-codex OAuth). Machine-specific keys (shellPath, deviceId) are
+# stripped from the seed at build time and never written here either.
+if [ -f /home/agent/pi-defaults/settings.json ]; then
+    mkdir -p /data/.pi/agent
+    if node -e '
+const fs = require("fs");
+const seed = JSON.parse(fs.readFileSync("/home/agent/pi-defaults/settings.json", "utf8"));
+const target = "/data/.pi/agent/settings.json";
+let cur = {};
+try { cur = JSON.parse(fs.readFileSync(target, "utf8")); } catch {}
+if (seed.defaultProvider === "openai" && !process.env.OPENAI_API_KEY && cur.defaultProvider && cur.defaultProvider !== "openai") {
+    console.log("pi settings: keeping volume provider " + cur.defaultProvider + " (no OPENAI_API_KEY for seed provider openai)");
+    delete seed.defaultProvider;
+    delete seed.defaultModel;
+}
+const pkgs = [...new Set([...(cur.packages || []), ...(seed.packages || [])])];
+const merged = { ...cur, ...seed, packages: pkgs };
+delete merged.shellPath;
+delete merged.deviceId;
+fs.writeFileSync(target, JSON.stringify(merged, null, 2) + "\n");
+console.log("pi settings merged");
+'; then
+        echo "pi settings merged"
+    else
+        echo "WARNING: pi settings merge failed (non-fatal), continuing boot"
+    fi
+fi
+
+# T3 pi provider: ensure the Pi Agent provider instance exists and is
+# enabled in T3's server settings before t3 boots (settings are server-owned
+# once running, so this must happen here). Driver kind "pi", instance id
+# "pi" (the canonical default per t3code's defaultInstanceIdForDriver), empty
+# config = defaults (binaryPath "pi" resolves via mise shims on PATH, agent
+# dir defaults to ~/.pi/agent which is the persistent volume above).
+# Default model swap to pi happens once (marker file) so later UI changes
+# by Zach are not fought on every reboot. Pi's model "default" defers to
+# pi's own settings.json defaultModel.
+if node -e '
+const fs = require("fs");
+const target = "/data/.t3/userdata/settings.json";
+let s = {};
+try { s = JSON.parse(fs.readFileSync(target, "utf8")); } catch {}
+s.providerInstances = s.providerInstances || {};
+if (!s.providerInstances.pi || s.providerInstances.pi.driver !== "pi") {
+    s.providerInstances.pi = { driver: "pi", enabled: true, config: {} };
+} else {
+    s.providerInstances.pi.enabled = true;
+}
+const marker = "/data/.pi/.t3-pi-default-set";
+if (!fs.existsSync(marker)) {
+    s.defaultModelSelection = { instanceId: "pi", model: "default" };
+    fs.writeFileSync(marker, "default model set to pi at " + new Date().toISOString() + "\n");
+    console.log("t3 default model swapped to pi");
+}
+fs.mkdirSync("/data/.t3/userdata", { recursive: true });
+fs.writeFileSync(target, JSON.stringify(s, null, 2) + "\n");
+console.log("t3 pi provider ensured");
+'; then
+    echo "t3 pi provider configured"
+else
+    echo "WARNING: t3 pi provider setup failed (non-fatal), continuing boot"
+fi
 
 # Inject fnox age key from the Railway variable to the expected location.
 # (Zach: the key itself is injected, secrets stay encrypted in fnox.toml.)

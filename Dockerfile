@@ -35,7 +35,8 @@ RUN mise install
 # image ships a newer t3 than the volume has, the ~/.local/bin/t3 symlink
 # dangles and boot fails. Keep a complete copy of the install at a stable
 # path in the image (not on the volume).
-RUN curl -fsSL https://t3.codes/install.sh | sh && \
+# T3CODE_CHANNEL=nightly: pi agent support shipped on nightly (Oct 2026).
+RUN T3CODE_CHANNEL=nightly curl -fsSL https://t3.codes/install.sh | sh && \
     t3_ver="$(readlink /home/agent/.local/bin/t3 | xargs dirname | xargs basename)" && \
     mkdir -p /home/agent/.t3-stable && \
     cp -r "/home/agent/.t3/runtime/versions/$t3_ver" /home/agent/.t3-stable/ && \
@@ -45,6 +46,12 @@ RUN curl -fsSL https://t3.codes/install.sh | sh && \
 # explorer on gpt-6-luna medium) + versioned skills. Seeded into
 # /data/.codex on first boot by entrypoint.sh (cp -rn, volume wins).
 COPY --chown=agent:agent codex/ /home/agent/codex-defaults/
+
+# pi defaults: Zach's dotfiles agent settings (machine-specific keys like
+# shellPath and deviceId stripped). Merged into /data/.pi/agent on boot by
+# entrypoint.sh (node merge: seed wins, packages union-merged, volume-only
+# keys preserved; the working auth provider is never clobbered).
+COPY --chown=agent:agent pi/ /home/agent/pi-defaults/
 
 # Encrypted secrets (fnox.toml with age-encrypted values)
 # The age key is injected at boot via $FNOX_AGE_KEY -> ~/.config/fnox/age.txt
