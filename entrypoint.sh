@@ -49,18 +49,18 @@ for d in /home/agent/codex-defaults/skills/*/; do
 done
 
 # Pi settings: merge Zach's dotfiles agent config (image defaults at
-# /home/agent/pi-defaults/settings.json) into the persistent volume config.
+# /home/agent/pi-defaults/agent/settings.json) into the persistent volume config.
 # Merge rules: seed wins for scalar keys, packages are union-merged,
 # volume-only keys are preserved. Auth safety: if the seed wants the
 # "openai" provider but no OPENAI_API_KEY is available, keep the volume's
 # existing provider/model so pi keeps working on its current auth
 # (openai-codex OAuth). Machine-specific keys (shellPath, deviceId) are
 # stripped from the seed at build time and never written here either.
-if [ -f /home/agent/pi-defaults/settings.json ]; then
+if [ -f /home/agent/pi-defaults/agent/settings.json ]; then
     mkdir -p /data/.pi/agent
     if node -e '
 const fs = require("fs");
-const seed = JSON.parse(fs.readFileSync("/home/agent/pi-defaults/settings.json", "utf8"));
+const seed = JSON.parse(fs.readFileSync("/home/agent/pi-defaults/agent/settings.json", "utf8"));
 const target = "/data/.pi/agent/settings.json";
 let cur = {};
 try { cur = JSON.parse(fs.readFileSync(target, "utf8")); } catch {}
