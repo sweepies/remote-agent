@@ -36,7 +36,10 @@ RUN mise install
 # dangles and boot fails. Keep a complete copy of the install at a stable
 # path in the image (not on the volume).
 # T3CODE_CHANNEL=nightly: pi agent support shipped on nightly (Oct 2026).
-RUN T3CODE_CHANNEL=nightly curl -fsSL https://t3.codes/install.sh | sh && \
+# NOTE: the channel var must be set on the `sh` side of the pipe. A VAR=x
+# prefix on `curl` does not propagate across the pipe, so `sh` would
+# silently default to stable instead.
+RUN curl -fsSL https://t3.codes/install.sh | T3CODE_CHANNEL=nightly sh && \
     t3_ver="$(readlink /home/agent/.local/bin/t3 | xargs dirname | xargs basename)" && \
     mkdir -p /home/agent/.t3-stable && \
     cp -r "/home/agent/.t3/runtime/versions/$t3_ver" /home/agent/.t3-stable/ && \
