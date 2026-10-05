@@ -35,11 +35,14 @@ RUN mise install
 # image ships a newer t3 than the volume has, the ~/.local/bin/t3 symlink
 # dangles and boot fails. Keep a complete copy of the install at a stable
 # path in the image (not on the volume).
+# Pinned nightly T3 version, bumped daily by Renovate (see renovate.json).
+# Without the pin, the installer resolves `nightly` at build time instead.
+ARG T3CODE_VERSION=v0.0.46-nightly.20261005.2676
 # T3CODE_CHANNEL=nightly: pi agent support shipped on nightly (Oct 2026).
 # NOTE: the channel var must be set on the `sh` side of the pipe. A VAR=x
 # prefix on `curl` does not propagate across the pipe, so `sh` would
 # silently default to stable instead.
-RUN curl -fsSL https://t3.codes/install.sh | T3CODE_CHANNEL=nightly sh && \
+RUN curl -fsSL https://t3.codes/install.sh | T3CODE_CHANNEL=nightly T3CODE_VERSION=${T3CODE_VERSION} sh && \
     t3_ver="$(readlink /home/agent/.local/bin/t3 | xargs dirname | xargs basename)" && \
     mkdir -p /home/agent/.t3-stable && \
     cp -r "/home/agent/.t3/runtime/versions/$t3_ver" /home/agent/.t3-stable/ && \
