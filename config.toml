@@ -8,6 +8,7 @@ node = "latest"
 go = "latest"
 nushell = "latest"
 "npm:cf" = "latest"
+pi = "latest"
 
 [dotfiles]
-"~/.pi" = { source = "pi", mode = "copy" }
+"~/.pi" = { source = ".pi", mode = "copy" }
