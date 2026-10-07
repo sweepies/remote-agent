@@ -1,4 +1,0 @@
-# alchemy local state (CI and deploys use Cloudflare.state(); the local dir
-# is only a scratch area during the state-store bootstrap)
-.alchemy/
-node_modules/

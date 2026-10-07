@@ -1,0 +1,13 @@
+[tools]
+fnox = "latest"
+age = "latest"
+pitchfork = "latest"
+aube = "latest"
+gh = "latest"
+node = "latest"
+go = "latest"
+nushell = "latest"
+"npm:cf" = "latest"
+
+[dotfiles]
+"~/.pi" = { source = "pi", mode = "copy" }
