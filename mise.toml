@@ -1,0 +1,116 @@
+min_version = "2026.10.3"
+
+[bootstrap.remote]
+source = "."
+install_mise = true
+# Transfer configuration, not caches, credentials, or retired age provisioning.
+exclude = [
+  ".pi/npm", ".pi/git", ".pi/agent/npm", ".pi/agent/git",
+  ".pi/agent/auth.json", ".pi/agent/sessions", ".pi/settings.json",
+  "fnox.toml", "fnox", ".box", "._*", ".agents",
+]
+
+[bootstrap.remote.hosts.box]
+host = "us-east-1.box.upstash.com"
+user = "certain-jaguar-48082"
+port = 22
+
+# Track the latest published main, never a fixed commit or a local snapshot.
+[bootstrap.repos]
+"~/dotfiles" = { url = "https://github.com/sweepies/dotfiles.git", ref = "main" }
+
+[bootstrap.hooks.pre-repos]
+run = '''
+set -eu
+# Standalone repo commands do not run bootstrap phase hooks. Converge here,
+# before the outer repos phase also pulls configured branch refs. Scope the
+# writable window ourselves, including failure/interruption cleanup.
+hooks="$HOME/dotfiles/.config/git/hooks"
+relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
+trap relock EXIT
+trap 'exit 1' HUP INT TERM
+if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
+mise bootstrap repos apply --yes
+mise bootstrap repos update "$HOME/dotfiles" --yes
+'''
+
+[bootstrap.hooks.pre-dotfiles]
+run = 'mise trust "$HOME/dotfiles/mise.toml"'
+
+[bootstrap.directories."/workspace/home/.t3"]
+mode = "0700"
+
+[bootstrap.files."~/.local/bin/remote-agent-t3"]
+source = "scripts/t3-serve.sh"
+mode = "0755"
+
+[bootstrap.files."~/.local/bin/remote-agent-start"]
+source = "scripts/box-start.sh"
+mode = "0755"
+
+[bootstrap.directories."/workspace/home/.tailscale"]
+mode = "0700"
+
+[bootstrap.files."~/.local/bin/remote-agent-tailscaled"]
+source = "scripts/tailscale-daemon.sh"
+mode = "0755"
+
+# Only remote-specific configuration belongs here. Shared mise/Git/Pi/fnox
+# entries are applied natively by ~/dotfiles, never copied from this project.
+[dotfiles]
+"~/.pi/agent/mcp.json" = { source = ".pi/mcp.json", mode = "copy" }
+"~/.pi/agent/skills" = { source = ".pi/agent/skills", mode = "copy" }
+"~/.config/mise/conf.d/remote-agent.toml" = { source = "remote-tools.toml", mode = "copy" }
+
+[tasks.bootstrap]
+description = "Bootstrap shared dotfiles, remote tools, and a machine-local fnox identity"
+run = '''
+set -eu
+[ "$(uname -s)" = Linux ] || { echo 'Remote-agent provisioning is Linux-only.' >&2; exit 1; }
+unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY
+# No managed shell startup: platform selection comes from native .miserc.toml.
+mise -C "$HOME/dotfiles" bootstrap --yes
+cd "$HOME"
+mise install
+# These are private regular machine-local files, never mise-managed dotfiles.
+# Refuse partial/legacy state; the operator must reconcile it explicitly.
+umask 077
+mkdir -p "$HOME/.config/fnox"
+chmod 700 "$HOME/.config/fnox"
+config="$HOME/.config/fnox/config.toml"
+identity="$HOME/.config/fnox/age.txt"
+if [ ! -e "$config" ] && [ ! -L "$config" ] && [ ! -e "$identity" ] && [ ! -L "$identity" ]; then
+    mise exec -- age-keygen -o "$identity"
+    recipient=$(mise exec -- age-keygen -y "$identity")
+    (set -C; printf 'import = ["./shared.toml"]\n\n[providers.sync-age]\ntype = "age"\nrecipients = ["%s"]\nkey_file = "~/.config/fnox/age.txt"\n' "$recipient" > "$config")
+else
+    mise exec -- python - "$config" "$identity" <<'PY'
+import os, subprocess, sys, tomllib
+from pathlib import Path
+config, identity = map(Path, sys.argv[1:])
+if any(p.is_symlink() or not p.is_file() for p in (config, identity)):
+    sys.exit("Refusing partial/non-regular fnox state; reconcile config.toml and age.txt first.")
+data = tomllib.loads(config.read_text())
+provider = data.get("providers", {}).get("sync-age", {})
+recipient = subprocess.check_output(["age-keygen", "-y", str(identity)], text=True).strip()
+if (data.get("import") != ["./shared.toml"] or provider.get("type") != "age"
+        or provider.get("recipients") != [recipient]
+        or os.path.expanduser(provider.get("key_file", "")) != str(identity)):
+    sys.exit("Refusing legacy/mismatched fnox state; reconcile the local import and sync-age provider first.")
+PY
+fi
+chmod 600 "$config" "$identity"
+# Package installation needs no secrets; auth, sessions, and caches stay local.
+mise exec -- pi update --extensions
+printf '%s\n' 'Bootstrap complete. Store the service-account token once with mise run remote-agent-auth, then run mise run remote-agent-enroll. Refreshes reuse the saved token.'
+'''
+
+[tasks.bootstrap-remote]
+description = "Bootstrap the Box using password authentication (requires sshpass)"
+run = "sh scripts/box-bootstrap.sh"
+
+[tasks.ssh]
+description = "Open an SSH session to the Box (requires sshpass; use mise exec on target)"
+run = '''
+SSHPASS="${UPSTASH_BOX_API_KEY:?UPSTASH_BOX_API_KEY must be set}" sshpass -e ssh certain-jaguar-48082@us-east-1.box.upstash.com
+'''

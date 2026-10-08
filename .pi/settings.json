@@ -8,6 +8,7 @@
     "npm:pi-lens",
     "npm:@tunnckocore/pi-gpt-fast-mode",
     "git:github.com/sweepies/pi-nu",
-    "npm:@capotej/pi-mise"
+    "npm:@capotej/pi-mise",
+    "npm:@kickythrust/pi-fnox"
   ]
 }

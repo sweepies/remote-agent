@@ -1,0 +1,3 @@
+# Remote age-key transport is retired. Machine-local fnox configuration lives
+# in ~/.config/fnox/config.toml and imports the shared 1Password references.
+[secrets]

@@ -1,0 +1,84 @@
+# Persistent Linux-only additions to ~/dotfiles/mise.toml.
+# Installed as ~/.config/mise/conf.d/remote-agent.toml; no duplicated shared tools.
+min_version = "2026.10.3"
+
+[env]
+# Provider-specific key_file settings must win over old Box environment inputs.
+FNOX_AGE_KEY = false
+FNOX_AGE_KEY_FILE = false
+
+[tools]
+go = "latest"
+# The registry's vfox backend can resolve vendor releases; aqua cannot resolve latest.
+op = { version = "latest", os = ["linux"] }
+"npm:t3" = "0.0.46-nightly.20261007.2774"
+"aqua:tailscale/tailscale" = { version = "1.102.5", os = ["linux"] }
+
+[tasks.remote-agent-auth]
+description = "Store the 1Password service-account token once, encrypted in this machine's isolated op-auth profile"
+run = '''
+set -eu
+set +x
+unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY OP_SERVICE_ACCOUNT_TOKEN FNOX_OP_SERVICE_ACCOUNT_TOKEN FNOX_PROFILE
+umask 077
+config="$HOME/.config/fnox/config.toml"
+[ -f "$config" ] && [ ! -L "$config" ] || { echo 'Bootstrap the machine-local fnox config first.' >&2; exit 1; }
+[ -t 0 ] || { echo 'Run remote-agent-auth in an interactive SSH terminal; enter the token only at the hidden fnox prompt.' >&2; exit 1; }
+# No secret value in argv, source files, plaintext env files, or shell history.
+fnox --config "$config" --no-daemon --profile op-auth set OP_SERVICE_ACCOUNT_TOKEN --provider sync-age --global
+chmod 600 "$config"
+echo 'Encrypted service-account token stored. Enrollment and vault commands now authenticate automatically.'
+'''
+
+[tasks.remote-agent-vault]
+description = "Run an op/fnox command with the persisted 1Password token (dev-vault read/write access)"
+dir = "{{cwd}}"
+run = '''
+#!/bin/sh
+set -eu
+set +x
+unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY OP_SERVICE_ACCOUNT_TOKEN FNOX_OP_SERVICE_ACCOUNT_TOKEN FNOX_PROFILE
+[ "$#" -gt 0 ] || { echo 'Usage: mise run remote-agent-vault -- op <command> [args...]' >&2; exit 1; }
+config="$HOME/.config/fnox/config.toml"
+[ -f "$config" ] && [ ! -L "$config" ] || { echo 'Bootstrap the machine-local fnox config first.' >&2; exit 1; }
+# The bootstrap token never joins the default Pi/T3 secret environment.
+exec fnox --config "$config" --no-daemon --non-interactive --profile op-auth --no-defaults --if-missing error exec -- "$@"
+'''
+
+[tasks.remote-agent-enroll]
+description = "Refresh dev-vault caches and provision Git signing using the persisted service-account token"
+run = '''
+set -eu
+set +x
+cd "$HOME"
+unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY OP_SERVICE_ACCOUNT_TOKEN FNOX_OP_SERVICE_ACCOUNT_TOKEN FNOX_PROFILE
+umask 077
+config="$HOME/.config/fnox/config.toml"
+[ -f "$config" ] && [ ! -L "$config" ] || { echo 'Bootstrap the machine-local fnox config first.' >&2; exit 1; }
+vault() {
+    fnox --config "$config" --no-daemon --non-interactive --profile op-auth --no-defaults --if-missing error exec -- "$@"
+}
+vault fnox --config "$config" --no-daemon --non-interactive --profile default sync --provider sync-age --source op --global --force
+vault fnox --config "$config" --no-daemon --non-interactive --profile git-signing --no-defaults sync GIT_SSH_SIGNING_KEY --provider sync-age --source op --global --force
+chmod 600 "$config"
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+key="$HOME/.ssh/git-signing"
+if [ -e "$key" ] || [ -L "$key" ]; then
+    [ -f "$key" ] && [ ! -L "$key" ] || { echo 'Refusing non-regular Git signing key.' >&2; exit 1; }
+    ssh-keygen -y -P '' -f "$key" >/dev/null
+    echo 'Existing Git signing key retained; rotation requires deliberate replacement.'
+else
+    temporary=$(mktemp "$HOME/.ssh/.git-signing.XXXXXXXX")
+    trap 'rm -f "$temporary"' 0
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    fnox --config "$config" --no-daemon --profile git-signing --no-defaults --if-missing error get GIT_SSH_SIGNING_KEY > "$temporary"
+    ssh-keygen -y -P '' -f "$temporary" >/dev/null
+    # Atomic no-clobber installation only after validating the exported key.
+    ln "$temporary" "$key"
+fi
+chmod 600 "$key"
+fnox --config "$config" --no-daemon --profile default check --all
+'''
