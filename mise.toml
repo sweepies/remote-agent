@@ -16,11 +16,10 @@ run = 'mise trust "$HOME/dotfiles/mise.toml"'
 
 # Interactive bash (SSH, T3 terminals) must see the same mise tools and env as
 # T3. Without this, the image's /etc/profile.d puts Upstash's bundled
-# /opt/runner/bin claude/codex first. Shims, not activate: Ubuntu's .profile
-# sources .bashrc before adding ~/.local/bin, so `mise` is not yet on PATH;
-# shims still run each tool with mise's env.
+# /opt/runner/bin claude/codex first. Ubuntu's .profile sources .bashrc before
+# adding ~/.local/bin, so the [dotfiles] line below puts mise on PATH first.
 [bootstrap.mise_shell_activate]
-bashrc = "shims"
+bashrc = "activate"
 
 [bootstrap.directories."/workspace/home/.t3"]
 mode = "0700"
@@ -54,6 +53,7 @@ mode = "0755"
 "~/.pi/agent/mcp.json" = { source = ".pi/mcp.json", mode = "copy" }
 "~/.pi/agent/skills" = { source = ".pi/agent/skills", mode = "copy" }
 "~/.config/mise/conf.d/remote-agent.toml" = { source = "remote-tools.toml", mode = "copy" }
+"~/.bashrc/local-bin" = { line = 'PATH="$HOME/.local/bin:$PATH"', position = "prepend" }
 
 [tasks.bootstrap]
 description = "Bootstrap shared dotfiles, remote tools, and a machine-local fnox identity"

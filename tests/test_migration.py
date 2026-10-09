@@ -69,14 +69,15 @@ esac
         self.assertIn("trap relock EXIT", updater)
         self.assertIn("mise trust", CONFIG["bootstrap"]["hooks"]["pre-dotfiles"]["run"])
         self.assertNotIn("secrets", CONFIG["bootstrap"])
-        self.assertEqual(CONFIG["bootstrap"]["mise_shell_activate"], {"bashrc": "shims"})
+        self.assertEqual(CONFIG["bootstrap"]["mise_shell_activate"], {"bashrc": "activate"})
+        self.assertEqual(CONFIG["dotfiles"]["~/.bashrc/local-bin"], {"line": 'PATH="$HOME/.local/bin:$PATH"', "position": "prepend"})
         self.assertEqual(CONFIG["tools"]["bun"], "1.4.2")
         self.assertNotIn("bootstrap-remote", CONFIG["tasks"])
         self.assertNotIn("ssh", CONFIG["tasks"])
         self.assertNotIn("remote-agent-auth", REMOTE["tasks"])
         self.assertEqual(set(CONFIG["dotfiles"]), {
             "~/.pi/agent/mcp.json", "~/.pi/agent/skills",
-            "~/.config/mise/conf.d/remote-agent.toml"})
+            "~/.config/mise/conf.d/remote-agent.toml", "~/.bashrc/local-bin"})
         self.assertFalse((ROOT / "scripts/box-bootstrap.sh").exists())
         self.assertEqual(set(REMOTE["tools"]), {
             "go", "node", "openbao", "op", "npm:t3", "aqua:tailscale/tailscale"})
