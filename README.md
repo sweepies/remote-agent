@@ -158,25 +158,13 @@ token is masked. The App-authored commit triggers the normal deploy workflow;
 no repository dispatch is required. Dotfiles updates never fetch-and-follow
 `main` on the Box.
 
-### Machine-local Git configuration and GitHub login
+### GitHub login
 
-Shared Git defaults from `~/dotfiles/.gitconfig` are linked at
-`~/.config/git/shared.gitconfig`. Dotfiles bootstrap maintains `~/.gitconfig` as
-a writable, machine-local regular file that includes those defaults first.
-Existing local settings remain afterward, so `git config --global` and
-`gh auth setup-git` can save machine-specific settings without modifying the
-dotfiles checkout. Remote bootstrap removes only the known, unmodified Upstash
-image config, preventing its stock identity, credential store and
-`safe.directory = *` from overriding the shared defaults.
-
-The known legacy `~/.gitconfig` symlink into `~/dotfiles/.gitconfig` migrates
-automatically. Unexpected symlinks or invalid local config fail for deliberate
-reconciliation. Bootstrap still refuses a dirty dotfiles checkout, including
-changes previously written through the legacy symlink. Preserve those changes
-privately and reconcile the checkout before retrying; do not force-reset it or
-commit credential material to make bootstrap pass.
-
-GitHub login is a separate, human-operated step on each Box after bootstrap:
+Shared Git defaults live at `~/.config/git/config`. Git reads the regular,
+machine-local `~/.gitconfig` afterward, so local settings win and
+`git config --global` / `gh auth setup-git` leave the dotfiles checkout clean.
+Dotfiles creates this local file when missing and migrates the known old symlink.
+Sign in on each Box after bootstrap:
 
 ```sh
 gh auth login --hostname github.com --git-protocol https --web
@@ -184,19 +172,9 @@ gh auth setup-git --hostname github.com
 gh auth status --hostname github.com
 ```
 
-Complete the browser/device authorization yourself. This configures GitHub CLI
-as the HTTPS Git credential helper; existing SSH remote URLs still require SSH
-authentication. Commit-signing keys do not grant repository access. See the
-official [login](https://cli.github.com/manual/gh_auth_login) and
-[Git helper](https://cli.github.com/manual/gh_auth_setup-git) documentation.
-
-GitHub CLI uses the system credential store when available and otherwise falls
-back to a plaintext local config file. Treat its auth state as sensitive,
-machine-local data: do not copy it into dotfiles or deployment inputs. It stays
-on the same Box's persistent disk across pause/resume and ordinary bootstrap
-reruns; replacement or rebuilding onto a fresh filesystem requires login again.
-An expired or revoked login also needs reauthentication. Bootstrap does not log
-in, export GitHub credentials, or synchronize them between machines.
+Native GitHub CLI auth stays on the same Box across pause/resume; a fresh
+replacement needs login again. Without a credential store, `gh` may save auth
+in a local plaintext file. Keep that state out of dotfiles and deployment inputs.
 
 ## Secrets and machine identity
 
