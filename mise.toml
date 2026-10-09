@@ -15,10 +15,12 @@ openbao = "2.7.1"
 run = 'mise trust "$HOME/dotfiles/mise.toml"'
 
 # Interactive bash (SSH, T3 terminals) must see the same mise tools and env as
-# T3. Without activation, the image's /etc/profile.d puts Upstash's bundled
-# /opt/runner/bin claude/codex shims first.
+# T3. Without this, the image's /etc/profile.d puts Upstash's bundled
+# /opt/runner/bin claude/codex first. Shims, not activate: Ubuntu's .profile
+# sources .bashrc before adding ~/.local/bin, so `mise` is not yet on PATH;
+# shims still run each tool with mise's env.
 [bootstrap.mise_shell_activate]
-bashrc = "activate"
+bashrc = "shims"
 
 [bootstrap.directories."/workspace/home/.t3"]
 mode = "0700"
