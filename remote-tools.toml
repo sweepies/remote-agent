@@ -1,34 +1,80 @@
 # Persistent Linux-only additions to ~/dotfiles/mise.toml.
-# Installed as ~/.config/mise/conf.d/remote-agent.toml; no duplicated shared tools.
+# Installed as ~/.config/mise/conf.d/remote-agent.toml. Node is deliberately
+# pinned here as well as in the deployment project for stable service runtimes.
 min_version = "2026.10.3"
 
 [env]
 # Provider-specific key_file settings must win over old Box environment inputs.
 FNOX_AGE_KEY = false
 FNOX_AGE_KEY_FILE = false
+BAO_ADDR = "https://bao.maccrae.family"
 
 [tools]
-go = "latest"
-# The registry's vfox backend can resolve vendor releases; aqua cannot resolve latest.
-op = { version = "latest", os = ["linux"] }
+go = "1.26.1"
+node = "24.14.0"
+openbao = "2.7.1"
+# Use the registry's vendor-release backend rather than aqua.
+op = { version = "2.40.0", os = ["linux"] }
 "npm:t3" = "0.0.46-nightly.20261007.2774"
 "aqua:tailscale/tailscale" = { version = "1.102.5", os = ["linux"] }
 
-[tasks.remote-agent-auth]
-description = "Store the 1Password service-account token once, encrypted in this machine's isolated op-auth profile"
+[tasks.remote-agent-bao-enroll]
+description = "Consume a private encrypted OpenBao enrollment upload"
 run = '''
+#!/bin/sh
 set -eu
 set +x
-unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY OP_SERVICE_ACCOUNT_TOKEN FNOX_OP_SERVICE_ACCOUNT_TOKEN FNOX_PROFILE
 umask 077
-config="$HOME/.config/fnox/config.toml"
-[ -f "$config" ] && [ ! -L "$config" ] || { echo 'Bootstrap the machine-local fnox config first.' >&2; exit 1; }
-[ -t 0 ] || { echo 'Run remote-agent-auth in an interactive SSH terminal; enter the token only at the hidden fnox prompt.' >&2; exit 1; }
-# No secret value in argv, source files, plaintext env files, or shell history.
-fnox --config "$config" --no-daemon --profile op-auth set OP_SERVICE_ACCOUNT_TOKEN --provider sync-age --global
-chmod 600 "$config"
-echo 'Encrypted service-account token stored. Enrollment and vault commands now authenticate automatically.'
+[ "$#" = 1 ] || { echo 'Expected one encrypted enrollment upload path' >&2; exit 1; }
+cd "$HOME"
+mkdir -p "/workspace/home/.remote-agent"
+[ ! -L "/workspace/home/.remote-agent" ] || exit 1
+chmod 700 "/workspace/home/.remote-agent"
+exec 8>"/workspace/home/.remote-agent/bao-enrollment.lock"
+flock 8
+status=$(node "$HOME/remote-agent/services/bao.mjs" enroll "$1")
+# Enrollment starts an absent service; live agents reauthenticate with the new
+# secret_id at the next login without interrupting an active T3 turn.
+node --input-type=module -e 'import {start} from "./remote-agent/services/processes.mjs"; start("bao");'
+# Box exec merges streams. Always publish the non-secret JSON summary last.
+printf '%s\n' "$status"
 '''
+
+[tasks.remote-agent-bao-rotate]
+description = "Retry pending accessor retirements and rotate a secret_id older than seven days"
+run = '''
+#!/bin/sh
+set -eu
+set +x
+umask 077
+cd "$HOME"
+mkdir -p "/workspace/home/.remote-agent"
+[ ! -L "/workspace/home/.remote-agent" ] || exit 1
+chmod 700 "/workspace/home/.remote-agent"
+exec 8>"/workspace/home/.remote-agent/bao-enrollment.lock"
+flock 8
+exec node "$HOME/remote-agent/services/bao.mjs" rotate
+'''
+
+[tasks.remote-agent-bao-config]
+description = "Generate the private bao agent config; refuse unenrolled or expired identity"
+run = '''
+#!/bin/sh
+set -eu
+set +x
+umask 077
+cd "$HOME"
+mkdir -p "/workspace/home/.remote-agent"
+[ ! -L "/workspace/home/.remote-agent" ] || exit 1
+chmod 700 "/workspace/home/.remote-agent"
+exec 8>"/workspace/home/.remote-agent/bao-enrollment.lock"
+flock 8
+exec node "$HOME/remote-agent/services/bao.mjs" config
+'''
+
+[tasks.remote-agent-bao-status]
+description = "Check local enrollment freshness without contacting OpenBao"
+run = 'node "$HOME/remote-agent/services/bao.mjs" status'
 
 [tasks.remote-agent-vault]
 description = "Run an op/fnox command with the persisted 1Password token (dev-vault read/write access)"

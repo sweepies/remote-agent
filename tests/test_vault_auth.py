@@ -180,13 +180,8 @@ else:
         self.assertEqual(response["stdin"], "fixture-json\n")
         self.assertEqual(Path(response["cwd"]).resolve(), self.home.resolve())
 
-    def test_auth_task_requires_terminal_without_writing_config(self):
-        original = self.config.read_bytes()
-        result = self.task("remote-agent-auth", check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("interactive SSH terminal", result.stderr)
-        self.assertEqual(self.config.read_bytes(), original)
-        self.assertIn("set OP_SERVICE_ACCOUNT_TOKEN --provider sync-age --global", TASKS["remote-agent-auth"]["run"])
+    def test_interactive_auth_task_is_retired(self):
+        self.assertNotIn("remote-agent-auth", TASKS)
 
 
 if __name__ == "__main__":

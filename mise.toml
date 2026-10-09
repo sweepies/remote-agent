@@ -1,39 +1,16 @@
 min_version = "2026.10.3"
 
-[bootstrap.remote]
-source = "."
-install_mise = true
-# Transfer configuration, not caches, credentials, or retired age provisioning.
-exclude = [
-  ".pi/npm", ".pi/git", ".pi/agent/npm", ".pi/agent/git",
-  ".pi/agent/auth.json", ".pi/agent/sessions", ".pi/settings.json",
-  "fnox.toml", "fnox", ".box", "._*", ".agents",
-]
+[tools]
+bun = "1.4.2"
+node = "24.14.0"
+python = "3.14.3"
+age = "1.3.2"
+fnox = "1.35.3"
+gh = "2.101.0"
+openbao = "2.7.1"
 
-[bootstrap.remote.hosts.box]
-host = "us-east-1.box.upstash.com"
-user = "certain-jaguar-48082"
-port = 22
-
-# Track the latest published main, never a fixed commit or a local snapshot.
-[bootstrap.repos]
-"~/dotfiles" = { url = "https://github.com/sweepies/dotfiles.git", ref = "main" }
-
-[bootstrap.hooks.pre-repos]
-run = '''
-set -eu
-# Standalone repo commands do not run bootstrap phase hooks. Converge here,
-# before the outer repos phase also pulls configured branch refs. Scope the
-# writable window ourselves, including failure/interruption cleanup.
-hooks="$HOME/dotfiles/.config/git/hooks"
-relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
-trap relock EXIT
-trap 'exit 1' HUP INT TERM
-if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
-mise bootstrap repos apply --yes
-mise bootstrap repos update "$HOME/dotfiles" --yes
-'''
-
+# The Box API bootstrap checks out both repositories at exact commits before
+# native bootstrap runs. No native repo updater is allowed to follow main.
 [bootstrap.hooks.pre-dotfiles]
 run = 'mise trust "$HOME/dotfiles/mise.toml"'
 
@@ -46,6 +23,14 @@ mode = "0755"
 
 [bootstrap.files."~/.local/bin/remote-agent-start"]
 source = "scripts/box-start.sh"
+mode = "0755"
+
+[bootstrap.files."~/.local/bin/remote-agent-relay"]
+source = "scripts/relay-serve.sh"
+mode = "0755"
+
+[bootstrap.files."~/.local/bin/remote-agent-bao"]
+source = "scripts/bao-agent.sh"
 mode = "0755"
 
 [bootstrap.directories."/workspace/home/.tailscale"]
@@ -69,6 +54,18 @@ set -eu
 [ "$(uname -s)" = Linux ] || { echo 'Remote-agent provisioning is Linux-only.' >&2; exit 1; }
 unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY
 # No managed shell startup: platform selection comes from native .miserc.toml.
+pin=$(tr -d '\n' < dotfiles.lock)
+[ "$(git -C "$HOME/dotfiles" rev-parse HEAD)" = "$pin" ] || { echo 'Dotfiles checkout does not match dotfiles.lock.' >&2; exit 1; }
+[ -z "$(git -C "$HOME/dotfiles" status --porcelain)" ] || { echo 'Refusing modified dotfiles.' >&2; exit 1; }
+hooks="$HOME/dotfiles/.config/git/hooks"
+relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
+trap relock EXIT
+trap 'exit 1' HUP INT TERM
+if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
+# Upstash images ship a stock ~/.gitconfig, which dotfiles refuse to overwrite.
+# Remove only that exact regular file; any other gitconfig is left to fail loudly.
+stock=$(printf '[user]\n\temail = box@upstash.com\n\tname = Upstash Box\n[credential]\n\thelper = store\n[safe]\n\tdirectory = *\n')
+if [ -f "$HOME/.gitconfig" ] && [ ! -L "$HOME/.gitconfig" ] && [ "$(cat "$HOME/.gitconfig")" = "$stock" ]; then rm -f "$HOME/.gitconfig"; fi
 mise -C "$HOME/dotfiles" bootstrap --yes
 cd "$HOME"
 mise install
@@ -102,15 +99,27 @@ fi
 chmod 600 "$config" "$identity"
 # Package installation needs no secrets; auth, sessions, and caches stay local.
 mise exec -- pi update --extensions
-printf '%s\n' 'Bootstrap complete. Store the service-account token once with mise run remote-agent-auth, then run mise run remote-agent-enroll. Refreshes reuse the saved token.'
+printf '%s\n' 'Bootstrap complete. The Alchemy provider delivers encrypted enrollment automatically.'
 '''
 
-[tasks.bootstrap-remote]
-description = "Bootstrap the Box using password authentication (requires sshpass)"
-run = "sh scripts/box-bootstrap.sh"
+[tasks."agent:enroll"]
+description = "Human-only OpenBao AppRole enrollment using the operator's existing bao OIDC session"
+run = "bun run infra/enroll.ts"
 
-[tasks.ssh]
-description = "Open an SSH session to the Box (requires sshpass; use mise exec on target)"
-run = '''
-SSHPASS="${UPSTASH_BOX_API_KEY:?UPSTASH_BOX_API_KEY must be set}" sshpass -e ssh certain-jaguar-48082@us-east-1.box.upstash.com
-'''
+[tasks.test]
+description = "Run all offline suites"
+run = "bun run test"
+
+[tasks.check]
+description = "Typecheck and statically validate without an Alchemy plan"
+run = "bun run check"
+
+[tasks.plan]
+run = "bun run plan"
+
+[tasks.deploy]
+run = "bun run deploy"
+
+[tasks.remote-agent-restart]
+description = "Wait for idle T3 turns before restarting changed services"
+run = "node services/restart-gate.mjs"
