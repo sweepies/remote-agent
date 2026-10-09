@@ -146,6 +146,8 @@ export class BootstrapController {
     } catch { return false; }
   }
   async read(props: BootstrapProps): Promise<BootstrapOutput | undefined> {
+    // A create that failed before its Box existed persists no Box ID; nothing to observe.
+    if (!props.boxId) return undefined;
     const hash = inputsHash(props);
     const installed = await this.installed(props);
     const auth = await this.marker(props.boxId, `${ROOT}/auth.json`);

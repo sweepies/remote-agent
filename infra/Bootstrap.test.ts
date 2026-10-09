@@ -120,6 +120,11 @@ providerTest.provider("Bootstrap resource idempotence with encrypted credential 
   yield* stack.destroy();
 }));
 
+test("read after a create that never got a Box ID observes nothing", async () => {
+  fake.reset();
+  expect(await fake.controller().read({ ...props, boxId: "" })).toBeUndefined();
+  expect(fake.commands).toHaveLength(0);
+});
 test("same succeeded inputs and matching token are a bootstrap no-op", async () => {
   fake.seed();
   const result = await fake.controller().reconcile(props);

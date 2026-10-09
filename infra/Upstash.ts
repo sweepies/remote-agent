@@ -304,6 +304,7 @@ export function previewProviderService(options: ProviderOptions = {}) {
       return Effect.succeed({ action: "update" } as const);
     },
     read: ({ olds, output }) => attempt(async () => {
+      if (!olds.boxId) return undefined;
       const live = await observe(olds.boxId, olds.port ?? 3774);
       if (!live) return undefined;
       const result = attrs(olds.boxId, live, output);

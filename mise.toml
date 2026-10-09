@@ -62,6 +62,10 @@ relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
 trap relock EXIT
 trap 'exit 1' HUP INT TERM
 if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
+# Upstash images ship a stock ~/.gitconfig, which dotfiles refuse to overwrite.
+# Remove only that exact regular file; any other gitconfig is left to fail loudly.
+stock=$(printf '[user]\n\temail = box@upstash.com\n\tname = Upstash Box\n[credential]\n\thelper = store\n[safe]\n\tdirectory = *\n')
+if [ -f "$HOME/.gitconfig" ] && [ ! -L "$HOME/.gitconfig" ] && [ "$(cat "$HOME/.gitconfig")" = "$stock" ]; then rm -f "$HOME/.gitconfig"; fi
 mise -C "$HOME/dotfiles" bootstrap --yes
 cd "$HOME"
 mise install
