@@ -24,7 +24,9 @@ export function serviceFingerprints(): ServiceFingerprints {
   const common = ["services/processes.mjs", "services/register.mjs", "scripts/box-start.sh", "services/init.mjs"].map(path => readFileSync(path, "utf8"));
   const fingerprint = (paths: string[], version: unknown) => sha256(JSON.stringify([local.tools.node, config.tools.node, ...common, version, ...paths.map(path => readFileSync(path, "utf8"))]));
   return {
-    t3: fingerprint(["scripts/t3-serve.sh"], config.tools["npm:t3"]),
+    // T3 launches provider CLIs (Pi, Claude Code, Codex) from the dotfiles tool
+    // set it started with, so a dotfiles pin change restarts it (idle-gated).
+    t3: fingerprint(["scripts/t3-serve.sh"], { version: config.tools["npm:t3"], dotfiles: dotfilesPin() }),
     tailscaled: fingerprint(["scripts/tailscale-daemon.sh"], config.tools["aqua:tailscale/tailscale"]),
     relay: fingerprint(["scripts/relay-serve.sh", "relay/server.mjs"], local.tools.node),
     bao: fingerprint(["scripts/bao-agent.sh", "services/bao.mjs", "services/bao-address.mjs", "services/bao-service.mjs"], {
