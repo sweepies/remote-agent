@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "module": "ESNext", "moduleResolution": "bundler", "target": "ESNext",
+    "noEmit": true, "strict": true, "skipLibCheck": true,
+    "allowJs": true, "allowImportingTsExtensions": true, "types": ["bun-types"]
+  },
+  "include": ["alchemy.run.ts", "infra/**/*.ts", "gateway/**/*.ts", "tests/**/*.ts"]
+}

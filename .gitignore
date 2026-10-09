@@ -1,0 +1,5 @@
+node_modules/
+.alchemy/
+.env
+.dev.vars
+__pycache__/

@@ -1,0 +1,31 @@
+name: deploy
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Alchemy state is shared across runs; deploy one revision at a time.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # The reusable workflow requests its own GitHub OIDC token, whose subject
+  # (repo + job_workflow_ref) identifies this repository to OpenBao. It reads
+  # kv/remote-agent-deploy, mints a short-lived Cloudflare token and revokes both afterwards.
+  # Deploys run code on a Box holding an OpenBao admin identity, so the shared
+  # workflow is pinned by commit. Bumping it also updates the OpenBao role
+  # remote-agent-deploy's bound job_workflow_ref to the same commit.
+  deploy:
+    uses: sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml@bb139d8b60817a0874305b2475f12850c2d775a9
+    with:
+      deployment_profile: bun
+      bao_jwt_role: remote-agent-deploy
+      bao_secret_path: kv/remote-agent-deploy
+      cloudflare_role: remote-agent-deploy
+    secrets: inherit

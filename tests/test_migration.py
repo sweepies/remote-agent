@@ -46,6 +46,8 @@ class MigrationTests(unittest.TestCase):
         python = subprocess.check_output(["mise", "which", "python"], text=True).strip()
         self.executable("age-keygen", f'#!/bin/sh\nexec "{age}" "$@"\n')
         self.executable("python", f'#!/bin/sh\nexec "{python}" "$@"\n')
+        pin = (ROOT / "dotfiles.lock").read_text().strip()
+        self.executable("git", '#!/bin/sh\ncase "$*" in *rev-parse*) printf "' + pin + '\\n";; esac\n')
         self.executable("uname", '#!/bin/sh\nprintf "Linux\\n"\n')
         self.executable("mise", '''#!/bin/sh
 printf '%s\n' "$*" >> "$CALL_LOG"
@@ -59,26 +61,28 @@ esac
 
     def test_native_config_contract(self):
         self.assertEqual(CONFIG["min_version"], "2026.10.3")
-        self.assertEqual(CONFIG["bootstrap"]["repos"]["~/dotfiles"]["ref"], "main")
-        updater = CONFIG["bootstrap"]["hooks"]["pre-repos"]["run"]
-        self.assertIn("repos apply", updater)
-        self.assertIn("repos update", updater)
+        self.assertNotIn("repos", CONFIG["bootstrap"])
+        self.assertNotIn("remote", CONFIG["bootstrap"])
+        updater = CONFIG["tasks"]["bootstrap"]["run"]
+        self.assertIn("dotfiles.lock", updater)
+        self.assertNotIn("repos update", updater)
         self.assertIn("trap relock EXIT", updater)
         self.assertIn("mise trust", CONFIG["bootstrap"]["hooks"]["pre-dotfiles"]["run"])
         self.assertNotIn("secrets", CONFIG["bootstrap"])
         self.assertNotIn("mise_shell_activate", CONFIG["bootstrap"])
-        self.assertNotIn("tools", CONFIG)
-        # Transfer exclusion alone cannot prevent local fnox/Pi discovery.
-        project_fnox = ROOT / "fnox.toml"
-        if project_fnox.exists():
-            local = tomllib.loads(project_fnox.read_text())
-            self.assertNotIn("REMOTE_AGE_KEY", local.get("secrets", {}))
+        self.assertEqual(CONFIG["tools"]["bun"], "1.4.2")
+        self.assertNotIn("bootstrap-remote", CONFIG["tasks"])
+        self.assertNotIn("ssh", CONFIG["tasks"])
+        self.assertNotIn("remote-agent-auth", REMOTE["tasks"])
         self.assertEqual(set(CONFIG["dotfiles"]), {
             "~/.pi/agent/mcp.json", "~/.pi/agent/skills",
             "~/.config/mise/conf.d/remote-agent.toml"})
-        self.assertIn("fnox", CONFIG["bootstrap"]["remote"]["exclude"])
+        self.assertFalse((ROOT / "scripts/box-bootstrap.sh").exists())
         self.assertEqual(set(REMOTE["tools"]), {
-            "go", "op", "npm:t3", "aqua:tailscale/tailscale"})
+            "go", "node", "openbao", "op", "npm:t3", "aqua:tailscale/tailscale"})
+        self.assertEqual(REMOTE["tools"]["node"], CONFIG["tools"]["node"])
+        self.assertEqual(REMOTE["tools"]["go"], "1.26.1")
+        self.assertEqual(REMOTE["tools"]["op"]["version"], "2.40.0")
         self.assertEqual(REMOTE["tools"]["npm:t3"], "0.0.46-nightly.20261007.2774")
         self.assertIs(REMOTE["env"]["FNOX_AGE_KEY"], False)
         self.assertEqual(REMOTE["tools"]["op"]["os"], ["linux"])
@@ -170,18 +174,13 @@ esac
                 self.assertFalse((self.home / ".ssh/git-signing").exists())
                 self.assertEqual(list((self.home / ".ssh").glob(".git-signing.*")), [])
 
-    def test_transport_has_no_fnox_lookup_and_keeps_argument_forwarding(self):
-        self.executable("sshpass", '#!/bin/sh\nexit 0\n')
-        self.executable("fnox", '#!/bin/sh\necho "Unexpected fnox lookup" >&2\nexit 99\n')
-        self.executable("mise", '#!/bin/sh\nprintf "%s\\n" "$@" > "$CALL_LOG"\n')
-        result = self.run_shell('sh scripts/box-bootstrap.sh --yes --github-relay-read-only --github-relay-repo sweepies/dotfiles')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.home / "calls").read_text().splitlines(), [
-            "bootstrap", "remote", "box", "--yes", "--github-relay-read-only",
-            "--github-relay-repo", "sweepies/dotfiles"])
-        wrapper = (ROOT / "scripts/box-bootstrap.sh").read_text()
-        self.assertNotIn("REMOTE_AGE_KEY", wrapper)
-        self.assertNotIn("secret-input", wrapper)
+    def test_cutover_service_contract(self):
+        self.assertRegex((ROOT / "dotfiles.lock").read_text(), r"^[a-f0-9]{40}\n$")
+        self.assertIn("--host 127.0.0.1", (ROOT / "scripts/t3-serve.sh").read_text())
+        for name in ("t3-serve.sh", "tailscale-daemon.sh", "relay-serve.sh", "bao-agent.sh"):
+            launcher = (ROOT / "scripts" / name).read_text()
+            self.assertIn("flock -n 9", launcher)
+            self.assertIn("services/register.mjs", launcher)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+{
+  "name": "remote-agent-infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "alchemy deploy --yes --stage production",
+    "plan": "alchemy plan --stage production",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test && node --test tests/services.node.mjs tests/bao.node.mjs && python -m unittest discover -s tests -v",
+    "check": "bun run typecheck && bun run infra/static-check.ts"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.2",
+    "@effect/platform-node": "4.0.2",
+    "alchemy": "2.0.0-beta.81",
+    "effect": "4.0.2",
+    "age-encryption": "0.3.0"
+  },
+  "devDependencies": {
+    "bun-types": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}
