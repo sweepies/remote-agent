@@ -158,6 +158,24 @@ token is masked. The App-authored commit triggers the normal deploy workflow;
 no repository dispatch is required. Dotfiles updates never fetch-and-follow
 `main` on the Box.
 
+### GitHub login
+
+Shared Git defaults live at `~/.config/git/config`. Git reads the regular,
+machine-local `~/.gitconfig` afterward, so local settings win and
+`git config --global` / `gh auth setup-git` leave the dotfiles checkout clean.
+Dotfiles creates this local file when missing and migrates the known old symlink.
+Sign in on each Box after bootstrap:
+
+```sh
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git --hostname github.com
+gh auth status --hostname github.com
+```
+
+Native GitHub CLI auth stays on the same Box across pause/resume; a fresh
+replacement needs login again. Without a credential store, `gh` may save auth
+in a local plaintext file. Keep that state out of dotfiles and deployment inputs.
+
 ## Secrets and machine identity
 
 Shared fnox references come from `~/dotfiles/.config/fnox/shared.toml`. Each fresh
