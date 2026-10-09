@@ -77,7 +77,7 @@ esac
         self.assertNotIn("remote-agent-auth", REMOTE["tasks"])
         self.assertEqual(set(CONFIG["dotfiles"]), {
             "~/.pi/agent/mcp.json", "~/.pi/agent/skills",
-            "~/.config/mise/conf.d/remote-agent.toml", "~/.bashrc/local-bin"})
+            "~/.config/mise/conf.d/remote-agent.toml", "~/.bashrc/local-bin", "~/.bashrc/mise-shims"})
         self.assertFalse((ROOT / "scripts/box-bootstrap.sh").exists())
         self.assertEqual(set(REMOTE["tools"]), {
             "go", "node", "openbao", "op", "npm:t3", "aqua:tailscale/tailscale"})

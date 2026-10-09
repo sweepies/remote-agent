@@ -54,6 +54,9 @@ mode = "0755"
 "~/.pi/agent/skills" = { source = ".pi/agent/skills", mode = "copy" }
 "~/.config/mise/conf.d/remote-agent.toml" = { source = "remote-tools.toml", mode = "copy" }
 "~/.bashrc/local-bin" = { line = 'PATH="$HOME/.local/bin:$PATH"', position = "prepend" }
+# Above .bashrc's non-interactive early return, so login probes (`bash -lc`,
+# used by T3 to find provider CLIs) also resolve mise tools before /opt/runner/bin.
+"~/.bashrc/mise-shims" = { line = 'PATH="$HOME/.local/share/mise/shims:$PATH"', position = "prepend" }
 
 [tasks.bootstrap]
 description = "Bootstrap shared dotfiles, remote tools, and a machine-local fnox identity"
