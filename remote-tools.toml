@@ -7,7 +7,6 @@ min_version = "2026.10.3"
 # Provider-specific key_file settings must win over old Box environment inputs.
 FNOX_AGE_KEY = false
 FNOX_AGE_KEY_FILE = false
-BAO_ADDR = "https://bao.maccrae.family"
 
 [tools]
 go = "1.26.1"

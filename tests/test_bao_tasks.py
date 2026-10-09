@@ -25,7 +25,7 @@ class BaoTaskTests(unittest.TestCase):
         self.bin.mkdir(mode=0o700)
         self.env = {key: value for key, value in os.environ.items()
                     if not any(word in key for word in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "AGE_KEY"))
-                    and not key.startswith(("FNOX_", "OP_", "MISE_", "XDG_"))}
+                    and not key.startswith(("FNOX_", "OP_", "MISE_", "XDG_")) and key != "BAO_ADDR"}
         self.env.update(HOME=str(self.home), PATH=f"{self.bin}:{os.environ['PATH']}",
                         CALL_LOG=str(self.home / "calls"))
 
@@ -117,18 +117,53 @@ esac
                 self.assertEqual(status, {"enrolled": True})
         self.assertEqual((self.home / "calls").read_text(), f"upload={upload} argc=3\n")
 
+    def test_enrolled_machine_local_address_is_loaded_by_native_mise(self):
+        node, mise = shutil.which("node"), shutil.which("mise")
+        assert node is not None and mise is not None
+        module = json.dumps(str(ROOT / "services/bao.mjs"))
+        code = '''
+import {controller} from MODULE;
+import {mkdirSync, writeFileSync} from "node:fs";
+import {join} from "node:path";
+const home = process.env.HOME, root = join(home, ".remote-agent");
+mkdirSync(root, {mode: 0o700});
+const upload = join(root, "bao-enroll-1234.age");
+writeFileSync(upload, "fixture-ciphertext", {mode: 0o600});
+const payload = {address: "https://openbao.example", role_id: "fixture-role",
+  wrapping_token: "fixture-wrapper", issued_at: Date.now()};
+const api = async (_address, path) => path === "sys/wrapping/unwrap"
+  ? {data: {secret_id: "fixture-secret", secret_id_accessor: "fixture-accessor"}}
+  : path === "auth/approle/login" ? {auth: {client_token: "fixture-token"}} : {};
+await controller({home, root, api, decrypt: () => JSON.stringify(payload)}).enroll(upload);
+'''.replace("MODULE", module)
+        enrolled = subprocess.run([node, "--input-type=module", "-e", code], cwd=self.home,
+                                  env=self.env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(enrolled.returncode, 0, enrolled.stderr)
+        config = self.home / ".config/mise"
+        local = config / "conf.d/remote-agent-bao.toml"
+        self.assertEqual(tomllib.loads(local.read_text()), {"env": {"BAO_ADDR": "https://openbao.example"}})
+        self.assertEqual(stat.S_IMODE(local.stat().st_mode), 0o600)
+        self.env.update(MISE_CONFIG_DIR=str(config), MISE_DATA_DIR=str(self.home / "mise-data"),
+                        MISE_CACHE_DIR=str(self.home / "mise-cache"), MISE_OFFLINE="true",
+                        MISE_AUTO_INSTALL="false", MISE_TRUSTED_CONFIG_PATHS=str(self.home))
+        self.executable("bao", '#!/bin/sh\n[ "$BAO_ADDR" = https://openbao.example ] || exit 98\nprintf "fixture-address-loaded\\n"\n')
+        result = subprocess.run([mise, "exec", "--", "bao", "status"], cwd=self.home,
+                                env=self.env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fixture-address-loaded", result.stdout)
+
     def test_human_cli_uses_default_helper_and_sanitizes_failures(self):
         bun = shutil.which("bun")
         assert bun is not None
         self.executable("bao", '''#!/bin/sh
 [ -z "${BAO_TOKEN:-}" ] && [ -z "${VAULT_TOKEN:-}" ] || exit 99
-[ "$BAO_ADDR" = https://bao.maccrae.family ] || exit 98
+[ "$BAO_ADDR" = https://openbao.example/ ] || exit 98
 printf '%s\n' "$*" >> "$CALL_LOG"
 if [ "$1" = write ]; then cat >> "$CALL_LOG"; exit 0; fi
 printf 'fixture-sensitive-error' >&2
 exit 1
 ''')
-        self.env.update(BAO_TOKEN="fixture-stale-override", VAULT_TOKEN="fixture-stale-override")
+        self.env.update(BAO_ADDR="https://openbao.example/", BAO_TOKEN="fixture-stale-override", VAULT_TOKEN="fixture-stale-override")
         code = ('import {bao,ROLE_SETTINGS} from ' + json.dumps(str(ROOT / "infra/enroll.ts")) + ';'
                 'await bao(["write","-format=json","auth/approle/role/agent-remote-agent","-"],ROLE_SETTINGS);'
                 'try {await bao(["read","-format=json","auth/approle/role/agent-remote-agent/role-id"]);} '
@@ -142,6 +177,34 @@ exit 1
         self.assertIn('"token_policies":["admin"]', calls)
         self.assertIn('"secret_id_ttl":"720h"', calls)
         self.assertNotIn("fixture-stale-override", calls)
+
+    def test_missing_or_invalid_operator_address_fails_offline_before_any_command(self):
+        bun = shutil.which("bun")
+        assert bun is not None
+        self.executable("bao", '#!/bin/sh\nprintf "unexpected\\n" >> "$CALL_LOG"\nexit 99\n')
+        self.env["CI"] = "false"
+        for address in (None, "", "http://openbao.example", "https://openbao.example/path",
+                        "https://openbao.example?q=1", "https://user:fixture-password@openbao.example"):
+            with self.subTest(address=address):
+                if address is None:
+                    self.env.pop("BAO_ADDR", None)
+                else:
+                    self.env["BAO_ADDR"] = address
+                expected = "absolute HTTPS URL" if address else "BAO_ADDR=… mise run agent:enroll"
+                result = subprocess.run([bun, str(ROOT / "infra/enroll.ts")], cwd=ROOT,
+                                        env=self.env, text=True, capture_output=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("openbao.example", result.stderr)
+                self.assertEqual(result.stdout, "")
+                code = ('import {bao} from ' + json.dumps(str(ROOT / "infra/enroll.ts")) + ';'
+                        'try {await bao(["status"]);} catch(error) {console.log(error.message);}')
+                cli = subprocess.run([bun, "-e", code], cwd=ROOT, env=self.env,
+                                     text=True, capture_output=True, timeout=10)
+                self.assertEqual(cli.returncode, 0, cli.stderr)
+                self.assertIn(expected, cli.stdout)
+                self.assertNotIn("openbao.example", cli.stdout)
+                self.assertFalse((self.home / "calls").exists())
 
     def test_ci_enrollment_fails_before_any_provider_operation(self):
         self.env["CI"] = "true"
@@ -157,7 +220,8 @@ exit 1
     def test_pins_and_service_contract(self):
         self.assertEqual(LOCAL["tools"]["openbao"], "2.7.1")
         self.assertEqual(REMOTE["tools"]["openbao"], "2.7.1")
-        self.assertEqual(REMOTE["env"]["BAO_ADDR"], "https://bao.maccrae.family")
+        self.assertNotIn("BAO_ADDR", REMOTE["env"])
+        self.assertNotIn("export BAO_ADDR", (ROOT / "scripts/bao-agent.sh").read_text())
         self.assertEqual(LOCAL["tasks"]["agent:enroll"]["run"], "bun run infra/enroll.ts")
         for path in [ROOT / "scripts/bao-agent.sh"]:
             result = subprocess.run(["sh", "-n", str(path)], text=True, capture_output=True)

@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { controller, day, role, enrollRequired, RequestError, request } from '../services/bao.mjs';
 import { serve } from '../services/bao-service.mjs';
+import { validateAddress } from '../services/bao-address.mjs';
 import { EventEmitter, once } from 'node:events';
 import { spawn } from 'node:child_process';
 
-function fixture(t) {
+const address = 'https://openbao.example';
+function fixture(t, payload = { address }) {
   const home = mkdtempSync(join(tmpdir(), 'remote-agent-bao-'));
   t.after(() => rmSync(home, { recursive: true }));
   const root = join(home, '.remote-agent'), directory = join(root, 'bao');
@@ -25,8 +27,9 @@ function fixture(t) {
   } };
   const calls = [], oldSecret = 'fixture-secret-id', newSecret = 'fixture-next-secret-id';
   const upload = join(root, 'bao-enroll-1234.age');
-  const api = async (path, data, token) => {
-    calls.push({ path, data, token });
+  const api = async (enrolledAddress, path, data, token) => {
+    assert.equal(enrolledAddress, validateAddress(payload.address));
+    calls.push({ address: enrolledAddress, path, data, token });
     inspection?.(path, data, token);
     const error = failure?.(path, data);
     if (error) throw error instanceof Error ? error : new Error('sensitive error response');
@@ -38,7 +41,7 @@ function fixture(t) {
     if (path.endsWith('/secret-id')) return { data: { secret_id: newSecret, secret_id_accessor: 'new-accessor' } };
     return {};
   };
-  const bao = controller({ home, root, api, fs, log: message => messages.push(message), now: () => clock, decrypt: () => JSON.stringify({ role_id: 'fixture-role-id', wrapping_token: 'fixture-wrapper', issued_at: clock }) });
+  const bao = controller({ home, root, api, fs, log: message => messages.push(message), now: () => clock, decrypt: () => JSON.stringify({ ...payload, role_id: 'fixture-role-id', wrapping_token: 'fixture-wrapper', issued_at: clock }) });
   const write = (path, value) => writeFileSync(path, value, { mode: 0o600 });
   const enroll = async () => { write(upload, 'ciphertext'); return bao.enroll(upload); };
   const token = () => write(join(home, '.vault-token'), 'fixture-current-token');
@@ -62,13 +65,89 @@ test('box enrollment unwraps once, verifies, installs private files/config then 
   const meta = readFileSync(join(f.directory, 'metadata.json'), 'utf8');
   assert.doesNotMatch(meta + JSON.stringify(result), /fixture-(secret|wrapper|verification)/);
   assert.equal(statSync(f.directory).mode & 0o777, 0o700);
-  for (const name of ['role-id', 'secret-id', 'metadata.json', 'agent.json']) assert.equal(statSync(join(f.directory, name)).mode & 0o777, 0o600);
+  for (const name of ['address', 'role-id', 'secret-id', 'metadata.json', 'agent.json']) assert.equal(statSync(join(f.directory, name)).mode & 0o777, 0o600);
   const config = JSON.parse(readFileSync(join(f.directory, 'agent.json'), 'utf8'));
-  assert.deepEqual(config.vault, { address: 'https://bao.maccrae.family' });
+  assert.deepEqual(config.vault, { address });
+  assert.equal(readFileSync(join(f.directory, 'address'), 'utf8'), address);
+  const misePath = join(f.home, '.config/mise/conf.d/remote-agent-bao.toml');
+  assert.equal(readFileSync(misePath, 'utf8'), `[env]\nBAO_ADDR = "${address}"\n`);
+  assert.equal(statSync(misePath).mode & 0o777, 0o600);
   assert.equal(config.auto_auth.method.type, 'approle');
   assert.equal(config.auto_auth.method.config.remove_secret_id_file_after_reading, false);
   assert.equal(config.auto_auth.method.config.secret_id_file_path, join(f.directory, 'secret-id'));
   assert.deepEqual(config.auto_auth.sink, [{ type: 'file', config: { path: join(f.home, '.vault-token'), mode: 0o600 } }]);
+});
+for (const invalid of [undefined, null, 42, '', 'openbao.example', 'http://openbao.example', 'https://openbao.example/path', 'https://openbao.example/?q=1', 'https://openbao.example?', 'https://openbao.example#', 'https://user:fixture-password@openbao.example', 'https://openbao.example\\\\path', ' https://openbao.example', 'https://openbao.example:invalid']) {
+  test(`payload rejects invalid address ${JSON.stringify(invalid)} before unwrap`, async t => {
+    const f = fixture(t, { address: invalid });
+    await assert.rejects(f.enroll(), error => {
+      assert.match(error.message, /absolute HTTPS URL.*no value logged/);
+      assert.doesNotMatch(error.message, /openbao\.example|fixture-password/);
+      return true;
+    });
+    assert.deepEqual(f.calls, []);
+    assert.equal(existsSync(f.upload), false);
+    assert.equal(f.bao.status(), false);
+  });
+}
+test('address validator normalizes only an HTTPS origin', () => {
+  assert.equal(validateAddress(`${address}/`), address);
+  assert.equal(validateAddress('https://openbao.example:8443'), 'https://openbao.example:8443');
+});
+test('all requests use the enrolled origin, including rotation and accessor lookup', async t => {
+  const runtimeAddress = 'https://openbao.example:8443';
+  const f = fixture(t, { address: `${runtimeAddress}/` });
+  await f.enroll(); f.advance(7); f.token();
+  f.fail(path => path.endsWith('/destroy') && new RequestError(500));
+  await f.bao.rotate();
+  assert.ok(f.calls.some(call => call.path.endsWith('/lookup')));
+  assert.ok(f.calls.every(call => call.address === runtimeAddress));
+  assert.equal(readFileSync(join(f.directory, 'address'), 'utf8'), runtimeAddress);
+  assert.equal(JSON.parse(readFileSync(join(f.directory, 'agent.json'), 'utf8')).vault.address, runtimeAddress);
+});
+test('config regenerates the private machine-local mise environment without an API call', async t => {
+  const f = fixture(t); await f.enroll(); f.calls.length = 0;
+  const misePath = join(f.home, '.config/mise/conf.d/remote-agent-bao.toml');
+  rmSync(misePath); rmSync(join(f.directory, 'agent.json'));
+  f.bao.config();
+  assert.equal(readFileSync(misePath, 'utf8'), `[env]\nBAO_ADDR = "${address}"\n`);
+  assert.equal(statSync(misePath).mode & 0o777, 0o600);
+  assert.equal(JSON.parse(readFileSync(join(f.directory, 'agent.json'), 'utf8')).vault.address, address);
+  assert.deepEqual(f.calls, []);
+});
+for (const kind of ['missing', 'invalid', 'symlink', 'public']) {
+  test(`status and config refuse ${kind} address; no legacy fallback`, async t => {
+    const f = fixture(t); await f.enroll(); f.calls.length = 0;
+    const path = join(f.directory, 'address'); rmSync(path);
+    if (kind === 'invalid') f.write(path, 'http://openbao.example');
+    if (kind === 'symlink') symlinkSync(join(f.home, 'outside'), path);
+    if (kind === 'public') { f.write(path, address); chmodSync(path, 0o644); }
+    assert.equal(f.bao.status(), false);
+    assert.throws(() => f.bao.config(), /enroll required|non-private\/non-regular/);
+    await assert.rejects(f.bao.rotate(), /enroll required|non-private\/non-regular/);
+    assert.deepEqual(f.calls, []);
+    if (kind === 'missing') { await f.enroll(); assert.equal(f.bao.status(), true); }
+  });
+}
+for (const kind of ['symlink', 'directory', 'public']) {
+  test(`machine-local mise config refuses ${kind} before consuming wrapper`, async t => {
+    const f = fixture(t); await f.enroll(); f.calls.length = 0;
+    const path = join(f.home, '.config/mise/conf.d/remote-agent-bao.toml'); rmSync(path);
+    if (kind === 'symlink') symlinkSync(join(f.home, 'outside'), path);
+    if (kind === 'directory') mkdirSync(path);
+    if (kind === 'public') { f.write(path, '[env]'); chmodSync(path, 0o644); }
+    await assert.rejects(f.enroll(), /non-private\/non-regular/);
+    assert.throws(() => f.bao.config(), /non-private\/non-regular/);
+    assert.deepEqual(f.calls, []);
+    assert.equal(existsSync(join(f.home, 'outside')), false);
+  });
+}
+test('machine-local mise config refuses a symlinked parent', async t => {
+  const f = fixture(t);
+  symlinkSync(f.root, join(f.home, '.config'));
+  await assert.rejects(f.enroll(), /non-directory/);
+  assert.deepEqual(f.calls, []);
+  assert.equal(existsSync(join(f.root, 'mise')), false);
 });
 test('already-used/expired wrapping token fails clearly, deletes upload and installs nothing', async t => {
   const f = fixture(t); f.fail(path => path === 'sys/wrapping/unwrap');
@@ -207,7 +286,7 @@ test('private state refuses symlink credentials, sink and public-mode uploads', 
   assert.equal(existsSync(join(f.home, 'outside-token')), false);
 });
 
-for (const name of ['role-id', 'secret-id', 'metadata.json', 'agent.json', 'next-secret-id', 'rotation.json', 'retire.json', 'install.json']) {
+for (const name of ['address', 'role-id', 'secret-id', 'metadata.json', 'agent.json', 'next-secret-id', 'rotation.json', 'retire.json', 'install.json']) {
   test(`enrollment preflights unsafe ${name} before any API call`, async t => {
     const f = fixture(t); await f.enroll(); f.calls.length = 0;
     const path = join(f.directory, name);
@@ -217,15 +296,16 @@ for (const name of ['role-id', 'secret-id', 'metadata.json', 'agent.json', 'next
   });
 }
 for (const [operation, name] of [
-  ['rename', 'install.json'], ['rename', 'retire.json'], ['rename', 'role-id'],
-  ['rename', 'secret-id'], ['rename', 'metadata.json'], ['rename', 'agent.json'],
+  ['rename', 'install.json'], ['rename', 'retire.json'], ['rename', 'address'], ['rename', 'role-id'],
+  ['rename', 'secret-id'], ['rename', 'metadata.json'], ['rename', 'agent.json'], ['rename', 'remote-agent-bao.toml'],
   ['unlink', 'next-secret-id'], ['unlink', 'rotation.json'], ['unlink', 'install.json'],
 ]) {
   test(`enrollment interruption at ${operation} ${name} never retires the old identity; recovers forward`, async t => {
     const f = fixture(t); await f.enroll(); f.calls.length = 0;
     f.write(join(f.directory, 'next-secret-id'), 'fixture-staged-secret');
     f.write(join(f.directory, 'rotation.json'), JSON.stringify({ next: { secret_id_accessor: 'staged-accessor' }, old_accessor: 'old-accessor' }));
-    f.failFS((op, path) => op === operation && path === join(f.directory, name));
+    const target = name === 'remote-agent-bao.toml' ? join(f.home, '.config/mise/conf.d', name) : join(f.directory, name);
+    f.failFS((op, path) => op === operation && path === target);
     await assert.rejects(f.enroll(), /persistence failed.*no response logged/);
     assert.equal(f.calls.some(call => call.path.endsWith('/destroy')), false);
     assert.equal(f.calls.at(-1).path, 'auth/token/revoke-self');
@@ -239,6 +319,8 @@ for (const [operation, name] of [
       controller({ home: f.home, root: f.root, now: () => Date.parse('2026-01-01T00:00:00Z') }).config();
       assert.equal(f.bao.status(), true);
       assert.equal(readFileSync(join(f.directory, 'secret-id'), 'utf8'), 'fixture-enrolled-secret-2');
+      assert.equal(readFileSync(join(f.directory, 'address'), 'utf8'), address);
+      assert.equal(readFileSync(join(f.home, '.config/mise/conf.d/remote-agent-bao.toml'), 'utf8'), `[env]\nBAO_ADDR = "${address}"\n`);
       f.token();
       await f.bao.rotate();
       assert.deepEqual(f.calls.filter(call => call.path.endsWith('/destroy')).map(call => call.data.secret_id_accessor).sort(), ['old-accessor', 'staged-accessor']);
@@ -310,8 +392,14 @@ for (const name of ['next-secret-id', 'rotation.json']) {
 test('request preserves only safe HTTP status for retirement decisions', async t => {
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
-  globalThis.fetch = async () => new Response('fixture-sensitive-body', { status: 400 });
-  await assert.rejects(request('fixture-path', {}, 'fixture-token'), error => {
+  const runtimeAddress = 'https://openbao.example:8443';
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, `${runtimeAddress}/v1/fixture-path`);
+    assert.equal(options.headers['X-Vault-Token'], 'fixture-token');
+    assert.equal(options.redirect, 'error');
+    return new Response('fixture-sensitive-body', { status: 400 });
+  };
+  await assert.rejects(request(runtimeAddress, 'fixture-path', {}, 'fixture-token'), error => {
     assert.equal(error.status, 400);
     assert.equal(error.message, 'OpenBao request failed (no response logged)');
     assert.doesNotMatch(JSON.stringify(error), /fixture-sensitive-body|fixture-token/);

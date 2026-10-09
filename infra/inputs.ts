@@ -27,8 +27,8 @@ export function serviceFingerprints(): ServiceFingerprints {
     t3: fingerprint(["scripts/t3-serve.sh"], config.tools["npm:t3"]),
     tailscaled: fingerprint(["scripts/tailscale-daemon.sh"], config.tools["aqua:tailscale/tailscale"]),
     relay: fingerprint(["scripts/relay-serve.sh", "relay/server.mjs"], local.tools.node),
-    bao: fingerprint(["scripts/bao-agent.sh", "services/bao.mjs", "services/bao-service.mjs"], {
-      version: config.tools.openbao, address: config.env.BAO_ADDR,
+    bao: fingerprint(["scripts/bao-agent.sh", "services/bao.mjs", "services/bao-address.mjs", "services/bao-service.mjs"], {
+      version: config.tools.openbao,
       tasks: ["enroll", "rotate", "config", "status"].map(name => config.tasks[`remote-agent-bao-${name}`].run),
     }),
   };

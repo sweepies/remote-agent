@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { plugin } from "bun";
 import ts from "typescript";
@@ -7,6 +8,9 @@ import ts from "typescript";
 // Offline only: no plan/deploy, input functions, credential files, or stack effects.
 const root = resolve(import.meta.dir, "..");
 const text = (path: string) => readFileSync(resolve(root, path), "utf8");
+const privateHostname = ["mac", "crae", ".", "family"].join("");
+const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+for (const path of tracked) assert.ok(!text(path).toLowerCase().includes(privateHostname), `Private OpenBao hostname forbidden in tracked file: ${path}`);
 const json = (path: string) => {
   try {
     return JSON.parse(text(path));
@@ -49,7 +53,7 @@ assert.equal(mise.tools.node, "24.14.0");
 assert.equal(mise.tools.python, "3.14.3");
 assert.equal(mise.tools.openbao, "2.7.1");
 assert.equal(tools.tools.openbao, "2.7.1");
-assert.equal(tools.env.BAO_ADDR, "https://bao.maccrae.family");
+assert.equal(Object.hasOwn(tools.env, "BAO_ADDR"), false, "OpenBao address must be machine-local");
 assert.equal(mise.tasks["agent:enroll"].run, "bun run infra/enroll.ts");
 assert.equal(tools.tools["npm:t3"], "0.0.46-nightly.20261007.2774");
 assert.deepEqual(tools.tools["aqua:tailscale/tailscale"], { version: "1.102.5", os: ["linux"] });
@@ -76,7 +80,7 @@ assert.deepEqual(workflow.concurrency, { group: "deploy", "cancel-in-progress": 
 assert.deepEqual(workflow.permissions, { contents: "read", "id-token": "write" });
 const deploy = workflow.jobs.deploy;
 assert.deepEqual(Object.keys(workflow.jobs), ["deploy"], "no caller-side token jobs or artifacts");
-assert.equal(deploy.uses, "sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml@bb139d8b60817a0874305b2475f12850c2d775a9");
+assert.equal(deploy.uses, "sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml@ab728d97934dc2845ee37960575d65108f9ab962");
 assert.equal(deploy.secrets, "inherit");
 assert.deepEqual(deploy.with, {
   deployment_profile: "bun", bao_jwt_role: "remote-agent-deploy",

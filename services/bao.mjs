@@ -4,8 +4,8 @@ import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { root as stateRoot } from './processes.mjs';
+import { validateAddress } from './bao-address.mjs';
 
-export const address = 'https://bao.maccrae.family';
 export const role = 'agent-remote-agent';
 export const enrollRequired = 'enroll required: run mise run agent:enroll on the operator machine';
 export const day = 24 * 60 * 60 * 1000;
@@ -14,7 +14,7 @@ const rolePath = `auth/approle/role/${role}`;
 export class RequestError extends Error {
   constructor(status) { super('OpenBao request failed (no response logged)'); this.status = status; }
 }
-export async function request(path, data, token) {
+export async function request(address, path, data, token) {
   try {
     const response = await fetch(`${address}/v1/${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Vault-Token': token } : {}) },
@@ -29,9 +29,11 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
   decrypt = path => execFileSync('age', ['-d', '-i', join(home, '.config/fnox/age.txt'), path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
 } = {}) {
   // Enrollment state lives on the persistent /workspace disk beside Bootstrap's
-  // markers; HOME (/home/boxuser) only holds the token sink and fnox identity.
+  // markers; HOME (/home/boxuser) holds the token sink, mise env and fnox identity.
   const directory = join(root, 'bao');
   const file = name => join(directory, name);
+  const miseDirectory = join(home, '.config/mise/conf.d');
+  const misePath = join(miseDirectory, 'remote-agent-bao.toml');
   function regular(path) {
     try { const stat = fs.lstatSync(path); return stat.isFile() && (stat.mode & 0o777) === 0o600 && stat.size > 0; }
     catch { return false; }
@@ -56,7 +58,9 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     if (!absent(path) && !regular(path)) throw new Error('Refusing non-private/non-regular OpenBao file');
   }
   function preflight() {
-    for (const name of ['role-id', 'secret-id', 'metadata.json', 'agent.json', 'next-secret-id', 'rotation.json', 'retire.json', 'install.json']) checkFile(file(name));
+    for (const name of ['address', 'role-id', 'secret-id', 'metadata.json', 'agent.json', 'next-secret-id', 'rotation.json', 'retire.json', 'install.json']) checkFile(file(name));
+    for (const path of [join(home, '.config'), join(home, '.config/mise'), miseDirectory]) privateDirectory(path);
+    checkFile(misePath);
     checkSink();
     fs.accessSync(directory, fs.constants.W_OK);
     fs.accessSync(home, fs.constants.W_OK);
@@ -83,10 +87,15 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     return typeof meta?.secret_id_accessor === 'string' && meta.secret_id_accessor.length > 0 &&
       Number.isFinite(meta.issued_at) && meta.issued_at <= now() && now() - meta.issued_at < 30 * day;
   }
+  function enrolledAddress() {
+    if (!regular(file('address'))) throw new Error(enrollRequired);
+    try { return validateAddress(fs.readFileSync(file('address'), 'utf8')); } catch { throw new Error(enrollRequired); }
+  }
+  function miseConfig() { write(misePath, `[env]\nBAO_ADDR = ${JSON.stringify(enrolledAddress())}\n`); }
   function status() {
     try {
       prepare();
-      return absent(file('install.json')) && regular(file('role-id')) && regular(file('secret-id')) && valid(json('metadata.json'));
+      return absent(file('install.json')) && regular(file('role-id')) && regular(file('secret-id')) && !!enrolledAddress() && valid(json('metadata.json'));
     } catch { return false; }
   }
   function requireEnrollment() { if (!status()) throw new Error(enrollRequired); }
@@ -105,7 +114,7 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
   function agentConfig() {
     const sink = checkSink();
     return JSON.stringify({
-      vault: { address },
+      vault: { address: enrolledAddress() },
       auto_auth: {
         method: { type: 'approle', mount_path: 'auth/approle', config: {
           role_id_file_path: file('role-id'), secret_id_file_path: file('secret-id'), remove_secret_id_file_after_reading: false,
@@ -124,11 +133,11 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     write(file('retire.json'), JSON.stringify(list));
   }
   async function destroy(accessor, token) {
-    try { await api(`${rolePath}/secret-id-accessor/destroy`, { secret_id_accessor: accessor }, token); return true; }
+    try { await api(enrolledAddress(), `${rolePath}/secret-id-accessor/destroy`, { secret_id_accessor: accessor }, token); return true; }
     catch {
       // OpenBao 2.7.1 answers 500 when destroying an unknown (expired or already
       // destroyed) accessor, so confirm absence with a lookup, which answers 404.
-      try { await api(`${rolePath}/secret-id-accessor/lookup`, { secret_id_accessor: accessor }, token); return false; }
+      try { await api(enrolledAddress(), `${rolePath}/secret-id-accessor/lookup`, { secret_id_accessor: accessor }, token); return false; }
       catch (error) { return error instanceof RequestError && error.status === 404; }
     }
   }
@@ -149,19 +158,23 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     const staged = optional('install.json');
     if (!staged) return;
     if (!valid(staged.meta) || typeof staged.role_id !== 'string' || !staged.role_id || typeof staged.secret_id !== 'string' || !staged.secret_id || !Array.isArray(staged.previous)) throw new Error('Invalid enrollment journal; reconcile private state');
+    const address = validateAddress(staged.address);
     // The durable journal allows roll-forward after any interrupted write. Until
     // it is removed, status refuses to claim that enrollment is installed.
     queue(staged.previous, staged.meta.secret_id_accessor);
+    write(file('address'), address);
     write(file('role-id'), staged.role_id);
     write(file('secret-id'), staged.secret_id);
     write(file('metadata.json'), JSON.stringify(staged.meta));
     write(file('agent.json'), agentConfig());
+    miseConfig();
     remove(file('next-secret-id')); remove(file('rotation.json'));
     remove(file('install.json'));
   }
   function config() {
     prepare(); preflight(); install(); requireEnrollment();
     write(file('agent.json'), agentConfig());
+    miseConfig();
   }
   async function enroll(path) {
     prepare(); preflight(); install();
@@ -172,24 +185,25 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     try { payload = JSON.parse(decrypt(path)); }
     catch { throw new Error('Enrollment decryption failed (no response logged)'); }
     finally { remove(path); }
-    if (typeof payload.role_id !== 'string' || !payload.role_id || typeof payload.wrapping_token !== 'string' || !payload.wrapping_token) throw new Error('Invalid enrollment payload');
+    if (typeof payload?.role_id !== 'string' || !payload.role_id || typeof payload?.wrapping_token !== 'string' || !payload.wrapping_token) throw new Error('Invalid enrollment payload');
+    const address = validateAddress(payload.address);
     let unwrapped;
-    try { unwrapped = await api('sys/wrapping/unwrap', {}, payload.wrapping_token); }
+    try { unwrapped = await api(address, 'sys/wrapping/unwrap', {}, payload.wrapping_token); }
     catch { throw new Error('Wrapping token already used or expired; treat unexpected failure as possible interception. Re-run mise run agent:enroll on the operator machine'); }
     const meta = metadata(unwrapped.data, payload.issued_at);
     let login;
-    try { login = await api('auth/approle/login', { role_id: payload.role_id, secret_id: unwrapped.data.secret_id }); }
+    try { login = await api(address, 'auth/approle/login', { role_id: payload.role_id, secret_id: unwrapped.data.secret_id }); }
     catch { throw new Error('AppRole verification login failed (no response logged)'); }
     const token = login?.auth?.client_token;
     if (typeof token !== 'string' || !token) throw new Error('AppRole verification login failed (no response logged)');
     try {
-      write(file('install.json'), JSON.stringify({ role_id: payload.role_id, secret_id: unwrapped.data.secret_id, meta, previous }));
+      write(file('install.json'), JSON.stringify({ address, role_id: payload.role_id, secret_id: unwrapped.data.secret_id, meta, previous }));
       install();
       // Only a fully flushed installation authorizes retiring prior identities.
       await retire(token);
     } catch { throw new Error('OpenBao enrollment persistence failed; reconcile private state (no response logged)'); }
     finally {
-      try { await api('auth/token/revoke-self', {}, token); }
+      try { await api(address, 'auth/token/revoke-self', {}, token); }
       catch { log('OpenBao verification token revocation failed; installed identity retained (no response logged)'); }
     }
     return summary(meta);
@@ -208,7 +222,7 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
       const old = json('metadata.json');
       if (now() - old.issued_at < 7 * day) return { rotated: false };
       const token = sinkToken(), issuedAt = now();
-      const result = await api(`${rolePath}/secret-id`, {}, token);
+      const result = await api(enrolledAddress(), `${rolePath}/secret-id`, {}, token);
       const next = metadata(result.data, issuedAt);
       journal = { next, old_accessor: old.secret_id_accessor };
       try {

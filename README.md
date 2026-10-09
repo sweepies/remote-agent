@@ -87,7 +87,10 @@ concurrency group `deploy` and **no cancellation**. It invokes
 `sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml`, pinned by commit
 because deploys run code on a Box holding an OpenBao admin identity (push access
 here, to dotfiles and to ops-workflows is admin-equivalent). Bumping the pin also
-updates role `remote-agent-deploy`'s bound `job_workflow_ref` to the same commit.
+updates the OpenBao role `remote-agent-deploy`'s bound `job_workflow_ref` to the
+same commit. The repository requires the Actions secret `BAO_ADDRESS` (already
+provisioned), inherited by the shared workflow to supply the private OpenBao
+address. Bootstrap and offline CI checks never need that address.
 The shared workflow requests its own GitHub OIDC token; nothing is passed between jobs or stored as an
 artifact. This repository's OIDC subject template is `repo` + `job_workflow_ref`
 (immutable). The job logs in to OpenBao's GitHub JWT mount (`jwt/`) with role
@@ -203,7 +206,9 @@ the age identity and persistent signing key: profile isolation is not a sandbox.
 
 ## OpenBao agent identity
 
-The Box is **admin-equivalent** in OpenBao at `https://bao.maccrae.family`.
+The Box is **admin-equivalent** in OpenBao. Its address is private runtime
+configuration supplied by the operator, never a repository default. All URLs
+below use the placeholder `https://openbao.example`, not a live endpoint.
 Its AppRole is `agent-remote-agent` on the existing `approle/` mount with policy
 `admin`: service tokens have a 1-hour TTL and 24-hour maximum lifetime;
 secret IDs have a 30-day TTL, unlimited uses, and are required for login.
@@ -215,36 +220,57 @@ local enrollment files and age; it does not contact OpenBao or issue credentials
 A first deployment (or a rebuilt/stale Box) starts the other services but fails
 reconcile with **`enroll required: run mise run agent:enroll`**. The unenrolled
 `bao` service refuses to start. Once bootstrap has installed the tools/tasks,
-on the operator's Mac, with the existing Upstash key supplied privately:
+on the operator's Mac, with the existing Upstash key and `BAO_ADDR` supplied
+from their **private environment**. The owner keeps `BAO_ADDR` in a private
+repository's mise `[env]`; invoke enrollment with that environment active.
+The address must be an absolute HTTPS origin with no path, query, fragment or
+credentials. There is no fallback if it is absent or invalid. For example,
+substituting the real address privately (never in this repository):
 
 ```sh
-BAO_ADDR=https://bao.maccrae.family mise exec -- bao login -method=oidc
-mise run agent:enroll
+BAO_ADDR=https://openbao.example mise exec -- bao login -method=oidc
+BAO_ADDR=https://openbao.example mise run agent:enroll
 ```
 
-The task uses the human's default `bao` token helper and ignores environment
-token overrides. It idempotently writes the AppRole settings, discovers exactly
-one Box using the same `remote-agent` label as the provider, reads the public age
+The task uses the human's default `bao` token helper, preserves `BAO_ADDR` for
+the CLI and clears `BAO_TOKEN`/`VAULT_TOKEN` overrides. It idempotently writes the
+AppRole settings, discovers exactly one Box using the same `remote-agent` label
+as the provider, reads the public age
 recipient and role ID, and issues a **five-minute response-wrapped** secret ID.
-Only the wrapping token, public role ID and wrapping issue time leave the Mac,
-age-encrypted through the existing BoxApi upload channel. The actual secret ID
-is unwrapped only on the Box. The random private upload is removed even on
+The address, wrapping token, public role ID and wrapping issue time leave the
+Mac only age-encrypted through the existing BoxApi upload channel. The actual
+secret ID is unwrapped only on the Box. The random private upload is removed even on
 failure. An already-used/expired wrapper fails non-zero with a possible
 interception warning; investigate an unexpected failure before re-enrolling.
 
-The Box verifies an AppRole login and revokes that verification token before
-installing the files. Role ID, secret ID, metadata and generated agent config
-are regular `0600` files in `~/.remote-agent/bao/` (`0700`). Metadata contains
-only the accessor and issue time, not credentials. Enrollment starts an absent
-`bao` service; it does not interrupt T3 or an already-running token agent. The
+The Box validates the payload address, verifies an AppRole login, durably
+installs the files, retires prior accessors, then revokes the verification token.
+Address (`address`), role ID, secret ID, metadata and generated agent config are
+regular `0600` files in `/workspace/home/.remote-agent/bao/` (`0700`). A private
+enrollment journal rolls forward interrupted installation; status remains
+unenrolled until installation completes. Metadata contains only the accessor
+and issue time, not credentials. Enrollment starts an absent `bao` service;
+it does not interrupt T3 or an already-running token agent. The
 local task prints only the role, accessor and expiry. After enrollment, retry the
 normal deployment to complete reconcile.
 
 `bao agent` renews its token and reauthenticates using those files. Its private
 file sink is **`~/.vault-token` (`0600`)**, so T3, Pi and Claude can just run
-`bao`; `BAO_ADDR` is supplied by the box-side mise environment. No token goes in
-Alchemy props/state, Box environment inputs or command arguments. Any same-user
+`bao`. Enrollment/config atomically writes a private `0600` machine-local
+`~/.config/mise/conf.d/remote-agent-bao.toml` containing only `[env]` and
+`BAO_ADDR`; this file is outside the checkout. The agent uses `vault.address`
+from its generated config; every enrollment/rotation request uses the enrolled
+address. No token goes in Alchemy props/state, Box environment inputs or
+command arguments. Any same-user
 process can read this identity; file permissions are not a sandbox.
+
+**Hard cutover: re-enrollment is required for the currently enrolled Box.**
+Its old identity has no `/workspace/home/.remote-agent/bao/address` file, so
+Bootstrap reports **enroll required** after this change, even if its secret ID
+is still fresh. Missing/invalid address state never falls back to a repository
+value or environment override. Run `BAO_ADDR=… mise run agent:enroll` from the
+operator's private environment, then retry normal deployment. Re-enrollment
+also supplies the machine-local mise environment and generated agent config.
 
 At service start and every 24 hours, the service invokes
 `remote-agent-bao-rotate`. It does nothing below seven days; otherwise it uses
@@ -254,19 +280,20 @@ interrupted publication/destruction without issuing another ID. Failures log
 non-secret status and retry next cycle. A failed issue retains the old identity;
 a failed destroy retains the new one and retries destruction. No secrets are
 printed by the enrollment or rotation implementation; service output stays in
-`~/.remote-agent/services/bao.log` with private permissions.
+`/workspace/home/.remote-agent/services/bao.log` with private permissions.
 
 If rotation cannot succeed before the **30-day lapse**, or the Box is paused for
 30 days, the expired secret ID cannot perform another login. Bootstrap and a
 fresh service start refuse that stale identity. A human must run
-`mise run agent:enroll` again; deployment cannot recover it automatically.
+`BAO_ADDR=… mise run agent:enroll` again from their private environment;
+deployment cannot recover it automatically.
 Clock synchronization between the operator and Box is required for freshness
 checks. Already-issued service tokens can live up to their 24-hour maximum.
 
 **Revocation is deleting the role**, from the operator's human session:
 
 ```sh
-BAO_ADDR=https://bao.maccrae.family mise exec -- bao delete auth/approle/role/agent-remote-agent
+BAO_ADDR=https://openbao.example mise exec -- bao delete auth/approle/role/agent-remote-agent
 ```
 
 This disables new AppRole logins/secret-ID issuance. Already-issued tokens may

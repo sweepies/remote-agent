@@ -22,7 +22,7 @@ jobs:
   # workflow is pinned by commit. Bumping it also updates the OpenBao role
   # remote-agent-deploy's bound job_workflow_ref to the same commit.
   deploy:
-    uses: sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml@bb139d8b60817a0874305b2475f12850c2d775a9
+    uses: sweepies/ops-workflows/.github/workflows/alchemy-deploy.yml@ab728d97934dc2845ee37960575d65108f9ab962
     with:
       deployment_profile: bun
       bao_jwt_role: remote-agent-deploy

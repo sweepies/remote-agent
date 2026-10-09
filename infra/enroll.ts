@@ -4,8 +4,12 @@ import { BoxApi } from "./box-api.ts";
 import { lastJSON, quote, type BootstrapApi } from "./Bootstrap.ts";
 import { BOX_LABEL } from "./inputs.ts";
 import { observeBox } from "./Upstash.ts";
+import { validateAddress } from "../services/bao-address.mjs";
 
-export const BAO_ADDR = "https://bao.maccrae.family";
+function operatorAddress() {
+  if (!process.env.BAO_ADDR) throw new Error("Run enrollment with BAO_ADDR set from your private environment, e.g. BAO_ADDR=… mise run agent:enroll");
+  return validateAddress(process.env.BAO_ADDR);
+}
 export const ROLE = "agent-remote-agent";
 export const ROLE_SETTINGS = {
   token_policies: ["admin"], token_ttl: "1h", token_max_ttl: "24h", token_type: "service",
@@ -14,7 +18,8 @@ export const ROLE_SETTINGS = {
 export type Bao = (args: string[], input?: unknown) => Promise<any>;
 // The human's default token helper is used; no token is read by this program.
 export const bao: Bao = async (args, input) => {
-  const env: NodeJS.ProcessEnv = { ...process.env, BAO_ADDR };
+  operatorAddress();
+  const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.BAO_TOKEN;
   delete env.VAULT_TOKEN;
   try {
@@ -28,6 +33,7 @@ export const bao: Bao = async (args, input) => {
 export async function enroll(api: BootstrapApi & Pick<BoxApi, "request">, options: {
   bao?: Bao; encrypt?: (recipient: string, payload: string) => Promise<Uint8Array>;
 } = {}) {
+  const address = operatorAddress();
   const box = await observeBox(api, BOX_LABEL);
   if (!box) throw new Error("No remote-agent Box found; bootstrap it before enrollment");
   // Resolve the public recipient before issuing the five-minute wrapping token.
@@ -45,8 +51,8 @@ export async function enroll(api: BootstrapApi & Pick<BoxApi, "request">, option
     const encrypter = new Encrypter(); encrypter.addRecipient(recipient);
     return encrypter.encrypt(payload);
   });
-  // Only the wrapper and public role/issue time leave the operator machine.
-  const ciphertext = await encrypt(recipient, JSON.stringify({ role_id: roleId, wrapping_token: wrapped.token, issued_at: issuedAt }));
+  // The address travels privately with the wrapper and public role/issue time.
+  const ciphertext = await encrypt(recipient, JSON.stringify({ address, role_id: roleId, wrapping_token: wrapped.token, issued_at: issuedAt }));
   const path = `/workspace/home/.remote-agent/bao-enroll-${crypto.randomUUID()}.age`;
   await api.exec(box.id, 'umask 077; mkdir -p /workspace/home/.remote-agent; chmod 700 /workspace/home/.remote-agent');
   try {

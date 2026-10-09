@@ -238,7 +238,7 @@ test("unenrolled or stale Box fails reconcile after service launch without any B
   expect(await controller.read(props)).toBeUndefined();
   await expect(controller.reconcile(props)).rejects.toThrow("enroll required: run mise run agent:enroll");
   expect(fake.commands).toContain('"$HOME/.local/bin/remote-agent-start"');
-  expect(fake.commands.join("\n")).not.toContain("bao.maccrae.family");
+  expect(fake.commands.join("\n")).not.toContain("openbao.example");
   expect(fake.commands.join("\n")).not.toContain("secret-id");
   expect(fake.encrypted).toBe(0);
 });

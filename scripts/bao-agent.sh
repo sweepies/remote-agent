@@ -3,7 +3,6 @@ set -eu
 set +x
 umask 077
 unset BAO_TOKEN VAULT_TOKEN
-export BAO_ADDR=https://bao.maccrae.family
 cd "$HOME"
 state=/workspace/home/.remote-agent/services
 mkdir -p "$state"
