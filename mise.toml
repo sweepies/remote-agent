@@ -14,6 +14,12 @@ openbao = "2.7.1"
 [bootstrap.hooks.pre-dotfiles]
 run = 'mise trust "$HOME/dotfiles/mise.toml"'
 
+# Interactive bash (SSH, T3 terminals) must see the same mise tools and env as
+# T3. Without activation, the image's /etc/profile.d puts Upstash's bundled
+# /opt/runner/bin claude/codex shims first.
+[bootstrap.mise_shell_activate]
+bashrc = "activate"
+
 [bootstrap.directories."/workspace/home/.t3"]
 mode = "0700"
 
@@ -53,7 +59,7 @@ run = '''
 set -eu
 [ "$(uname -s)" = Linux ] || { echo 'Remote-agent provisioning is Linux-only.' >&2; exit 1; }
 unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY
-# No managed shell startup: platform selection comes from native .miserc.toml.
+# Platform selection comes from native .miserc.toml.
 pin=$(tr -d '\n' < dotfiles.lock)
 [ "$(git -C "$HOME/dotfiles" rev-parse HEAD)" = "$pin" ] || { echo 'Dotfiles checkout does not match dotfiles.lock.' >&2; exit 1; }
 [ -z "$(git -C "$HOME/dotfiles" status --porcelain)" ] || { echo 'Refusing modified dotfiles.' >&2; exit 1; }

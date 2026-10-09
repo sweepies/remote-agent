@@ -69,7 +69,7 @@ esac
         self.assertIn("trap relock EXIT", updater)
         self.assertIn("mise trust", CONFIG["bootstrap"]["hooks"]["pre-dotfiles"]["run"])
         self.assertNotIn("secrets", CONFIG["bootstrap"])
-        self.assertNotIn("mise_shell_activate", CONFIG["bootstrap"])
+        self.assertEqual(CONFIG["bootstrap"]["mise_shell_activate"], {"bashrc": "activate"})
         self.assertEqual(CONFIG["tools"]["bun"], "1.4.2")
         self.assertNotIn("bootstrap-remote", CONFIG["tasks"])
         self.assertNotIn("ssh", CONFIG["tasks"])
