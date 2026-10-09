@@ -38,7 +38,7 @@ function fixture(t) {
     if (path.endsWith('/secret-id')) return { data: { secret_id: newSecret, secret_id_accessor: 'new-accessor' } };
     return {};
   };
-  const bao = controller({ home, api, fs, log: message => messages.push(message), now: () => clock, decrypt: () => JSON.stringify({ role_id: 'fixture-role-id', wrapping_token: 'fixture-wrapper', issued_at: clock }) });
+  const bao = controller({ home, root, api, fs, log: message => messages.push(message), now: () => clock, decrypt: () => JSON.stringify({ role_id: 'fixture-role-id', wrapping_token: 'fixture-wrapper', issued_at: clock }) });
   const write = (path, value) => writeFileSync(path, value, { mode: 0o600 });
   const enroll = async () => { write(upload, 'ciphertext'); return bao.enroll(upload); };
   const token = () => write(join(home, '.vault-token'), 'fixture-current-token');
@@ -236,7 +236,7 @@ for (const [operation, name] of [
       assert.equal(f.bao.status(), false, 'partial installation cannot claim enrolled');
       f.failFS(() => false);
       // A fresh process/controller has only the durable state, not closures.
-      controller({ home: f.home, now: () => Date.parse('2026-01-01T00:00:00Z') }).config();
+      controller({ home: f.home, root: f.root, now: () => Date.parse('2026-01-01T00:00:00Z') }).config();
       assert.equal(f.bao.status(), true);
       assert.equal(readFileSync(join(f.directory, 'secret-id'), 'utf8'), 'fixture-enrolled-secret-2');
       f.token();
@@ -393,3 +393,9 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
 }
 
 
+test('box state root is the persistent Bootstrap root that enroll.ts uploads into, not HOME', async () => {
+  const { root } = await import('../services/processes.mjs');
+  assert.equal(root, '/workspace/home/.remote-agent');
+  assert.equal(controller({ home: '/home/boxuser' }).directory, join(root, 'bao'));
+  assert.match(readFileSync(new URL('../infra/enroll.ts', import.meta.url), 'utf8'), /\/workspace\/home\/\.remote-agent\/bao-enroll-/);
+});

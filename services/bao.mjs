@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { root as stateRoot } from './processes.mjs';
 
 export const address = 'https://bao.maccrae.family';
 export const role = 'agent-remote-agent';
@@ -23,11 +24,13 @@ export async function request(path, data, token) {
     return response.status === 204 ? {} : await response.json();
   } catch (error) { throw error instanceof RequestError ? error : new RequestError(); }
 }
-export function controller({ home = process.env.HOME, api = request, now = Date.now, fs = filesystem,
+export function controller({ home = process.env.HOME, root = stateRoot, api = request, now = Date.now, fs = filesystem,
   log = message => console.error(message),
   decrypt = path => execFileSync('age', ['-d', '-i', join(home, '.config/fnox/age.txt'), path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }),
 } = {}) {
-  const root = join(home, '.remote-agent'), directory = join(root, 'bao');
+  // Enrollment state lives on the persistent /workspace disk beside Bootstrap's
+  // markers; HOME (/home/boxuser) only holds the token sink and fnox identity.
+  const directory = join(root, 'bao');
   const file = name => join(directory, name);
   function regular(path) {
     try { const stat = fs.lstatSync(path); return stat.isFile() && (stat.mode & 0o777) === 0o600 && stat.size > 0; }

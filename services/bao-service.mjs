@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { day } from './bao.mjs';
+import { root } from './processes.mjs';
 import { fileURLToPath } from 'node:url';
 
 export async function serve({ launch = spawn, every = setInterval, cancel = clearInterval,
@@ -50,7 +51,7 @@ export async function serve({ launch = spawn, every = setInterval, cancel = clea
           resolve();
         };
         try {
-          agent = launch(mise, ['exec', '--', 'bao', 'agent', `-config=${process.env.HOME}/.remote-agent/bao/agent.json`], { stdio: 'inherit' });
+          agent = launch(mise, ['exec', '--', 'bao', 'agent', `-config=${root}/bao/agent.json`], { stdio: 'inherit' });
           agent.once('error', finish);
           agent.once('close', finish);
         } catch { finish(); }

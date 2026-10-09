@@ -34,8 +34,12 @@ class BaoTaskTests(unittest.TestCase):
         path.write_text(content)
         path.chmod(0o700)
 
+    def body(self, name):
+        # The Box state root is fixed on the persistent disk; tests relocate it.
+        return REMOTE["tasks"][name]["run"].replace("/workspace/home/.remote-agent", str(self.home / ".remote-agent"))
+
     def task(self, action, *args):
-        return subprocess.run(["sh", "-c", REMOTE["tasks"][f"remote-agent-bao-{action}"]["run"], action, *args],
+        return subprocess.run(["sh", "-c", self.body(f"remote-agent-bao-{action}"), action, *args],
                               cwd=ROOT, env=self.env, text=True, capture_output=True, timeout=10)
 
     def test_box_tasks_forward_only_public_paths_and_serialize_writers(self):
@@ -71,7 +75,7 @@ case "$*" in *' enroll '*) printf '{"role":"agent-remote-agent","secret_id_acces
         tasks = []
         for action in ("enroll", "status"):
             name = f"remote-agent-bao-{action}"
-            tasks.append(f"[tasks.{name}]\nrun = {json.dumps(REMOTE['tasks'][name]['run'])}\n")
+            tasks.append(f"[tasks.{name}]\nrun = {json.dumps(self.body(name))}\n")
         (config / "config.toml").write_text("\n".join(tasks))
         self.env.update(MISE_CONFIG_DIR=str(config), MISE_DATA_DIR=str(self.home / "mise-data"),
                         MISE_CACHE_DIR=str(self.home / "mise-cache"), MISE_OFFLINE="true",
