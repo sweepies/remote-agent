@@ -16,6 +16,7 @@ exec >>"$state_dir/daemon.log" 2>&1
 "$HOME/.local/bin/mise" exec -- node "$HOME/remote-agent/services/register.mjs" tailscaled "$$"
 exec "$HOME/.local/bin/mise" exec -- tailscaled \
     --tun=userspace-networking \
+    --socks5-server=127.0.0.1:1055 \
     --statedir="$state_dir" \
     --state="$state_dir/tailscaled.state" \
     --socket="$state_dir/tailscaled.sock"

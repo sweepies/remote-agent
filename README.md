@@ -253,8 +253,14 @@ BAO_ADDR=https://openbao.example mise run agent:enroll
 The task uses the human's default `bao` token helper, preserves `BAO_ADDR` for
 the CLI and clears `BAO_TOKEN`/`VAULT_TOKEN` overrides. It idempotently writes the
 AppRole settings, discovers exactly one Box using the same `remote-agent` label
-as the provider, reads the public age
-recipient and role ID, and issues a **five-minute response-wrapped** secret ID.
+as the provider, and reads the public age recipient and role ID. Before issuing a
+**five-minute response-wrapped** secret ID, it ensures the role ID alias on the
+`approle/` mount belongs to entity `agent-remote-agent`. An existing automatically
+named entity is renamed; a missing alias creates/upserts the named entity and
+binds the alias. If a different entity already holds that name, enrollment fails
+without issuing credentials; reconcile the identity manually. Re-enrollment
+leaves an already-correct entity unchanged. The k3s JWT username then maps to
+`bao:agent-remote-agent`, not an automatically generated `bao:entity_…` name.
 The address, wrapping token, public role ID and wrapping issue time leave the
 Mac only age-encrypted through the existing BoxApi upload channel. The actual
 secret ID is unwrapped only on the Box. The random private upload is removed even on
@@ -350,6 +356,39 @@ A surviving group fails closed rather than launching over lock-holding children.
 service markers are private. T3 state lives in `/workspace/home/.t3`; Tailscale
 identity/socket/Funnel state remains in `/workspace/home/.tailscale`.
 
+The userspace daemon also listens for SOCKS5 on **127.0.0.1:1055**, loopback only.
+Ordinary processes can reach tailnet hosts through this proxy without a TUN
+device. The operator's private infra checkout supplies an agent kubeconfig with
+that `proxy-url` and a mise exec plugin exchanging `~/.vault-token` for a
+15-minute k3s JWT; neither file nor credential is provisioned by this repository.
+
+`remote-tools.toml` sets **`MISE_ENV=agent`** in its Box-wide `[env]`, installed as
+`~/.config/mise/conf.d/remote-agent.toml`. The managed `~/.bashrc/mise-env` line in
+`mise.toml` evaluates `mise -C "$HOME" env --shell bash` before Bash's
+non-interactive early return, so interactive shells and login probes (`bash -lc`)
+export only the global environment, not the starting repository's `KUBECONFIG`
+or `BAO_ADDR`. The pinned dotfiles bootstrap installs `~/.config/mise/config.toml`
+and remote-agent installs global `conf.d` entries; neither installs `~/mise.toml`
+or `~/.mise.toml`. Keep `$HOME` free of project mise configs. Output is evaluated
+only if mise succeeds, and a missing/failing mise does not abort shell startup.
+Non-login `bash -c` children inherit the global environment from their parent.
+All service launchers use `mise exec` after changing to `$HOME`; init and the
+restart gate run from `~/remote-agent`, whose project config has no `[env]`, so
+neither path captures the private infra repository's environment.
+`services/processes.mjs` passes that environment to each service, and T3's
+Pi/Claude sessions inherit it. In the private infra checkout, mise's shims
+therefore select `mise.agent.toml` and its agent kubeconfig for each command,
+allowing plain `kubectl …` through the normal mise shims. No Upstash `env_vars`
+are used.
+
+Deploy the published commit to install the config and launchers. Environment
+changes participate in all service fingerprints, so running services pick them
+up through the existing idle-gated restart flow; Tailscale's new listener also
+requires its daemon restart. A reboot is not required. Pause/resume is an
+alternative after installation; existing shells/sessions must be reopened.
+Until the restarts complete, running processes retain their old environment.
+Live tailnet, OpenBao and k3s access still require operator qualification.
+
 The existing userspace Tailscale Funnel remains an alternate route to
 127.0.0.1:3773. Unlike an authenticated Upstash preview request, Funnel/T3
 traffic **does not count as Box API activity**. After six hours of API inactivity
@@ -363,7 +402,8 @@ independent and is not re-enabled by this stack.
 ### Gated restarts
 
 Fingerprints distinguish T3 launcher/version, Tailscale launcher/version,
-relay code/launcher, and Bao launcher/version/config/rotation code. Common process-launcher or Node changes affect the services
+relay code/launcher, and Bao launcher/version/config/rotation code. Box-wide
+environment, common process-launcher or Node changes affect the services
 that depend on them. Dotfiles-only or unrelated source changes restart nothing.
 Installing tools or checking out a commit does not forcibly terminate an active
 T3 turn.

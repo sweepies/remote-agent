@@ -44,6 +44,22 @@ export async function enroll(api: BootstrapApi & Pick<BoxApi, "request">, option
   await run(["write", "-format=json", rolePath, "-"], ROLE_SETTINGS);
   const roleId = (await run(["read", "-format=json", `${rolePath}/role-id`]))?.data?.role_id;
   if (typeof roleId !== "string" || !roleId) throw new Error("OpenBao did not return a role_id");
+  const accessor = (await run(["read", "-format=json", "sys/auth"]))?.data?.["approle/"]?.accessor;
+  if (typeof accessor !== "string" || !accessor) throw new Error("OpenBao did not return the approle mount accessor");
+  const entity = (await run(["write", "-format=json", "identity/lookup/entity", `alias_name=${roleId}`, `alias_mount_accessor=${accessor}`]))?.data;
+  if (entity) {
+    if (typeof entity.id !== "string" || !entity.id) throw new Error("OpenBao did not return an alias entity id");
+    if (entity.name !== ROLE) {
+      const named = (await run(["write", "-format=json", "identity/lookup/entity", `name=${ROLE}`]))?.data;
+      if (named && named.id !== entity.id) throw new Error("OpenBao entity name agent-remote-agent belongs to a different entity; reconcile identity manually (no response logged)");
+      await run(["write", "-format=json", `identity/entity/id/${entity.id}`, `name=${ROLE}`]);
+    }
+  } else {
+    await run(["write", "-format=json", "identity/entity", `name=${ROLE}`]);
+    const id = (await run(["read", "-format=json", `identity/entity/name/${ROLE}`]))?.data?.id;
+    if (typeof id !== "string" || !id) throw new Error("OpenBao did not return the named entity id");
+    await run(["write", "-format=json", "identity/entity-alias", `name=${roleId}`, `mount_accessor=${accessor}`, `canonical_id=${id}`]);
+  }
   const wrapped = (await run(["write", "-format=json", "-wrap-ttl=5m", "-force", `${rolePath}/secret-id`]))?.wrap_info;
   const issuedAt = Date.parse(wrapped?.creation_time);
   if (typeof wrapped?.token !== "string" || !wrapped.token || !Number.isFinite(issuedAt)) throw new Error("OpenBao did not return wrapping metadata");
