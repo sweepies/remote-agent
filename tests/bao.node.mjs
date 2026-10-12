@@ -76,6 +76,15 @@ test('box enrollment unwraps once, verifies, installs private files/config then 
   assert.equal(config.auto_auth.method.config.remove_secret_id_file_after_reading, false);
   assert.equal(config.auto_auth.method.config.secret_id_file_path, join(f.directory, 'secret-id'));
   assert.deepEqual(config.auto_auth.sink, [{ type: 'file', config: { path: join(f.home, '.vault-token'), mode: 0o600 } }]);
+  assert.deepEqual(config.template_config, { exit_on_retry_failure: false });
+  assert.deepEqual(config.template, [{ destination: join(f.home, '.aws', 'credentials'), perms: '0600', contents: `{{ with secret "aws/creds/remote-agent" }}[default]
+aws_access_key_id = {{ .Data.access_key }}
+aws_secret_access_key = {{ .Data.secret_key }}
+aws_session_token = {{ .Data.session_token }}
+{{ end }}` }]);
+  assert.equal(statSync(join(f.home, '.aws')).mode & 0o777, 0o700);
+  assert.equal(existsSync(join(f.home, '.aws', 'credentials')), false);
+  assert.equal(existsSync(join(f.home, '.aws', 'config')), false);
 });
 for (const invalid of [undefined, null, 42, '', 'openbao.example', 'http://openbao.example', 'https://openbao.example/path', 'https://openbao.example/?q=1', 'https://openbao.example?', 'https://openbao.example#', 'https://user:fixture-password@openbao.example', 'https://openbao.example\\\\path', ' https://openbao.example', 'https://openbao.example:invalid']) {
   test(`payload rejects invalid address ${JSON.stringify(invalid)} before unwrap`, async t => {
@@ -149,6 +158,54 @@ test('machine-local mise config refuses a symlinked parent', async t => {
   assert.deepEqual(f.calls, []);
   assert.equal(existsSync(join(f.root, 'mise')), false);
 });
+test('config prepares a private AWS directory without touching existing AWS files or fetching credentials', async t => {
+  const f = fixture(t); await f.enroll(); f.calls.length = 0;
+  const directory = join(f.home, '.aws'), credentials = join(directory, 'credentials'), config = join(directory, 'config');
+  chmodSync(directory, 0o755);
+  f.write(credentials, 'fixture-credentials'); f.write(config, 'fixture-region');
+  f.bao.config();
+  assert.equal(statSync(directory).mode & 0o777, 0o700);
+  assert.equal(readFileSync(credentials, 'utf8'), 'fixture-credentials');
+  assert.equal(statSync(credentials).mode & 0o777, 0o600);
+  assert.equal(readFileSync(config, 'utf8'), 'fixture-region');
+  assert.deepEqual(f.calls, []);
+});
+for (const kind of ['symlink', 'dangling symlink', 'directory', 'public', 'empty']) {
+  test(`AWS credentials refuse ${kind} before consuming wrapper or regenerating config`, async t => {
+    const f = fixture(t); await f.enroll(); f.token(); f.calls.length = 0;
+    const path = join(f.home, '.aws', 'credentials'), agentPath = join(f.directory, 'agent.json');
+    const agentConfig = readFileSync(agentPath, 'utf8'), outside = join(f.home, 'outside');
+    if (kind === 'symlink') { f.write(outside, 'fixture-outside'); symlinkSync(outside, path); }
+    if (kind === 'dangling symlink') symlinkSync(outside, path);
+    if (kind === 'directory') mkdirSync(path);
+    if (kind === 'public') { f.write(path, 'fixture-credentials'); chmodSync(path, 0o644); }
+    if (kind === 'empty') f.write(path, '');
+    await assert.rejects(f.enroll(), /non-private\/non-regular/);
+    assert.throws(() => f.bao.config(), /non-private\/non-regular/);
+    assert.deepEqual(f.calls, []);
+    assert.equal(existsSync(f.upload), true);
+    if (kind === 'symlink') assert.equal(readFileSync(outside, 'utf8'), 'fixture-outside');
+    else assert.equal(existsSync(outside), false);
+    assert.equal(readFileSync(agentPath, 'utf8'), agentConfig);
+    assert.equal(readFileSync(join(f.home, '.vault-token'), 'utf8'), 'fixture-current-token');
+  });
+}
+for (const kind of ['symlink', 'dangling symlink', 'file']) {
+  test(`AWS directory refuses ${kind} before consuming wrapper or regenerating config`, async t => {
+    const f = fixture(t); await f.enroll(); f.token(); f.calls.length = 0;
+    const path = join(f.home, '.aws'); rmSync(path, { recursive: true });
+    if (kind === 'symlink') symlinkSync(f.root, path);
+    if (kind === 'dangling symlink') symlinkSync(join(f.home, 'outside'), path);
+    if (kind === 'file') f.write(path, 'fixture-not-directory');
+    await assert.rejects(f.enroll(), /non-directory/);
+    assert.throws(() => f.bao.config(), /non-directory/);
+    assert.deepEqual(f.calls, []);
+    assert.equal(existsSync(f.upload), true);
+    assert.equal(existsSync(join(f.root, 'credentials')), false);
+    assert.equal(existsSync(join(f.home, 'outside')), false);
+    assert.equal(readFileSync(join(f.home, '.vault-token'), 'utf8'), 'fixture-current-token');
+  });
+}
 test('already-used/expired wrapping token fails clearly, deletes upload and installs nothing', async t => {
   const f = fixture(t); f.fail(path => path === 'sys/wrapping/unwrap');
   await assert.rejects(f.enroll(), /already used or expired.*possible interception/);
