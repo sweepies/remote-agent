@@ -66,7 +66,7 @@ esac
         updater = CONFIG["tasks"]["bootstrap"]["run"]
         self.assertIn("dotfiles.lock", updater)
         self.assertNotIn("repos update", updater)
-        self.assertIn("trap relock EXIT", updater)
+        self.assertIn("Refusing modified dotfiles.", updater)
         self.assertIn("mise trust", CONFIG["bootstrap"]["hooks"]["pre-dotfiles"]["run"])
         self.assertNotIn("secrets", CONFIG["bootstrap"])
         self.assertEqual(CONFIG["bootstrap"]["mise_shell_activate"], {"bashrc": "activate"})

@@ -219,8 +219,8 @@ normal Pi/T3 environments. For deliberate vault operations on the Box:
 Supply sensitive item JSON through stdin, not command arguments. Refreshes use
 the saved encrypted credential. Existing regular signing keys are not clobbered.
 Register the exported public key as a GitHub **signing** key; private repository
-and checkpoint authorization remain separate. Any same-user process can access
-the age identity and persistent signing key: profile isolation is not a sandbox.
+authorization remains separate. Any same-user process can access the age identity
+and persistent signing key: profile isolation is not a sandbox.
 
 ## OpenBao agent identity
 

@@ -72,11 +72,6 @@ unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY
 pin=$(tr -d '\n' < dotfiles.lock)
 [ "$(git -C "$HOME/dotfiles" rev-parse HEAD)" = "$pin" ] || { echo 'Dotfiles checkout does not match dotfiles.lock.' >&2; exit 1; }
 [ -z "$(git -C "$HOME/dotfiles" status --porcelain)" ] || { echo 'Refusing modified dotfiles.' >&2; exit 1; }
-hooks="$HOME/dotfiles/.config/git/hooks"
-relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
-trap relock EXIT
-trap 'exit 1' HUP INT TERM
-if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
 # Drop only the unmodified Upstash image defaults so their identity, credential
 # store and safe.directory wildcard do not override the shared Git defaults.
 # Dotfiles migrates the known legacy symlink and preserves regular local config.

@@ -222,7 +222,11 @@ test("input classification: commit/dotfiles alone restart nothing; per-service d
 });
 test("bootstrap script pins refs/checksum, refuses dirty repos and is credential-free", () => {
   const script = bootstrapScript(props, inputsHash(props));
-  expect(script).toContain("sha256sum -c -"); expect(script).toContain("checkout --detach");
+  expect(script).toContain("sha256sum -c -");
+  expect(script).toContain('git clone "$url" "$path"');
+  expect(script).toContain('git -C "$path" fetch "$url" "$pin"');
+  expect(script).toContain('git -C "$path" checkout --detach "$pin"');
+  expect(script).toContain("trap finish EXIT");
   expect(script).toContain("status --porcelain"); expect(script).toContain("flock 9");
   expect(script.indexOf('rm -f "$current"')).toBeLessThan(script.indexOf('checkout "$HOME/remote-agent"'));
   expect(script.indexOf('mv "$current.tmp" "$current"')).toBeGreaterThan(script.indexOf('"$mise" bootstrap --yes'));
