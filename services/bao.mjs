@@ -61,6 +61,8 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
     for (const name of ['address', 'role-id', 'secret-id', 'metadata.json', 'agent.json', 'next-secret-id', 'rotation.json', 'retire.json', 'install.json']) checkFile(file(name));
     for (const path of [join(home, '.config'), join(home, '.config/mise'), miseDirectory]) privateDirectory(path);
     checkFile(misePath);
+    privateDirectory(join(home, '.aws'));
+    checkFile(join(home, '.aws', 'credentials'));
     checkSink();
     fs.accessSync(directory, fs.constants.W_OK);
     fs.accessSync(home, fs.constants.W_OK);
@@ -121,6 +123,12 @@ export function controller({ home = process.env.HOME, root = stateRoot, api = re
         } },
         sink: [{ type: 'file', config: { path: sink, mode: 0o600 } }],
       },
+      template_config: { exit_on_retry_failure: false },
+      template: [{ destination: join(home, '.aws', 'credentials'), perms: '0600', contents: `{{ with secret "aws/creds/remote-agent" }}[default]
+aws_access_key_id = {{ .Data.access_key }}
+aws_secret_access_key = {{ .Data.secret_key }}
+aws_session_token = {{ .Data.session_token }}
+{{ end }}` }],
     });
   }
   function pending() {

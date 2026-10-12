@@ -288,6 +288,14 @@ address. No token goes in Alchemy props/state, Box environment inputs or
 command arguments. Any same-user
 process can read this identity; file permissions are not a sandbox.
 
+The agent also renders **`~/.aws/credentials` (`0600`, in a `0700` directory)**
+from `aws/creds/remote-agent`: a `[default]` profile with 1-hour STS credentials
+for an admin role in the operator's AWS account, refreshed by the agent before
+expiry. Revoking an OpenBao lease does not invalidate already-issued STS
+credentials; they expire on their own. A render failure leaves the token service
+unaffected. The operator manages region configuration; the agent does not write
+`~/.aws/config`.
+
 **Hard cutover: re-enrollment is required for the currently enrolled Box.**
 Its old identity has no `/workspace/home/.remote-agent/bao/address` file, so
 Bootstrap reports **enroll required** after this change, even if its secret ID
