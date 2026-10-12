@@ -60,13 +60,17 @@ assert.deepEqual(tools.tools["aqua:tailscale/tailscale"], { version: "1.102.5", 
 assert.equal(tools.env.FNOX_AGE_KEY, false);
 assert.equal(tools.env.FNOX_AGE_KEY_FILE, false);
 assert.equal(tools.env.MISE_ENV, "agent");
-assert.deepEqual(mise.dotfiles["~/.bashrc/mise-env"], { line: 'eval "$("$HOME/.local/bin/mise" env --shell bash)"', position: "prepend" });
+assert.deepEqual(mise.dotfiles["~/.bashrc/mise-env"], { line: 'if _remote_agent_mise_env=$("$HOME/.local/bin/mise" -C "$HOME" env --shell bash); then eval "$_remote_agent_mise_env" || true; fi; unset _remote_agent_mise_env', position: "prepend" });
+assert.equal(Object.hasOwn(mise, "env"), false, "Init/restart project must not export project env to services");
 assert.match(text("scripts/tailscale-daemon.sh"), /^    --socks5-server=127\.0\.0\.1:1055 \\$/m);
 assert.deepEqual(mise.dotfiles["~/.config/mise/conf.d/remote-agent.toml"], { source: "remote-tools.toml", mode: "copy" });
 for (const [name, script] of Object.entries({
   t3: "t3-serve.sh", start: "box-start.sh", relay: "relay-serve.sh", tailscaled: "tailscale-daemon.sh", bao: "bao-agent.sh",
 })) {
   assert.deepEqual(mise.bootstrap.files[`~/.local/bin/remote-agent-${name}`], { source: `scripts/${script}`, mode: "0755" });
+  const launcher = text(`scripts/${script}`);
+  const directory = name === "start" ? 'cd "$HOME/remote-agent"' : 'cd "$HOME"';
+  assert.ok(launcher.indexOf(directory) >= 0 && launcher.indexOf(directory) < launcher.indexOf('"$HOME/.local/bin/mise"'), `${script} must select its fixed directory before mise`);
 }
 assert.equal(mise.tasks.check.run, "bun run check");
 assert.equal(mise.tasks.test.run, "bun run test");

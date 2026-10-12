@@ -364,12 +364,20 @@ that `proxy-url` and a mise exec plugin exchanging `~/.vault-token` for a
 
 `remote-tools.toml` sets **`MISE_ENV=agent`** in its Box-wide `[env]`, installed as
 `~/.config/mise/conf.d/remote-agent.toml`. The managed `~/.bashrc/mise-env` line in
-`mise.toml` evaluates `mise env --shell bash` before Bash's non-interactive early
-return, so interactive shells and login probes (`bash -lc`) export the same
-environment. Non-login `bash -c` children inherit it from their parent. Init and
-all service launchers use `mise exec`; `services/processes.mjs` passes that
-environment to each service, and T3's Pi/Claude sessions inherit it. In the private
-infra checkout, mise therefore selects `mise.agent.toml` and its agent kubeconfig,
+`mise.toml` evaluates `mise -C "$HOME" env --shell bash` before Bash's
+non-interactive early return, so interactive shells and login probes (`bash -lc`)
+export only the global environment, not the starting repository's `KUBECONFIG`
+or `BAO_ADDR`. The pinned dotfiles bootstrap installs `~/.config/mise/config.toml`
+and remote-agent installs global `conf.d` entries; neither installs `~/mise.toml`
+or `~/.mise.toml`. Keep `$HOME` free of project mise configs. Output is evaluated
+only if mise succeeds, and a missing/failing mise does not abort shell startup.
+Non-login `bash -c` children inherit the global environment from their parent.
+All service launchers use `mise exec` after changing to `$HOME`; init and the
+restart gate run from `~/remote-agent`, whose project config has no `[env]`, so
+neither path captures the private infra repository's environment.
+`services/processes.mjs` passes that environment to each service, and T3's
+Pi/Claude sessions inherit it. In the private infra checkout, mise's shims
+therefore select `mise.agent.toml` and its agent kubeconfig for each command,
 allowing plain `kubectl …` through the normal mise shims. No Upstash `env_vars`
 are used.
 
