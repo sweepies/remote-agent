@@ -72,11 +72,8 @@ if [ -f "$current" ] && grep -q '"hash":"${hash}"' "$current" &&
 # Invalidate before touching checkouts: restoring old HEADs is not a successful install.
 rm -f "$current"
 printf '%s\\n' '{"status":"running","hash":"${hash}"}' > ${quote(`${directory}/result.json`)}
-hooks=''
-relock() { if [ -n "$hooks" ] && [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
 finish() {
  code=$?
- relock
  if [ "$code" = 0 ]; then status=succeeded; else status=failed; fi
  printf '{"status":"%s","exitCode":%s,"hash":"${hash}"}\\n' "$status" "$code" > ${quote(`${directory}/result.json.tmp`)}
  mv ${quote(`${directory}/result.json.tmp`)} ${quote(`${directory}/result.json`)}
@@ -93,16 +90,12 @@ if [ ! -x "$mise" ] || [ "$("$mise" --version | awk '{print $1}')" != ${quote(pr
 fi
 checkout() {
  path=$1 url=$2 pin=$3
- if [ ! -d "$path" ]; then git -c core.hooksPath=/dev/null clone "$url" "$path"; fi
+ if [ ! -d "$path" ]; then git clone "$url" "$path"; fi
  [ -d "$path/.git" ] && [ ! -L "$path" ] || { echo 'Refusing non-repository checkout'; exit 1; }
  [ -z "$(git -C "$path" status --porcelain)" ] || { echo 'Refusing modified checkout'; exit 1; }
- hooks="$path/.config/git/hooks"
- if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
- git -C "$path" -c core.hooksPath=/dev/null fetch "$url" "$pin"
- git -C "$path" -c core.hooksPath=/dev/null checkout --detach "$pin"
+ git -C "$path" fetch "$url" "$pin"
+ git -C "$path" checkout --detach "$pin"
  [ "$(git -C "$path" rev-parse HEAD)" = "$pin" ]
- relock
- hooks=''
 }
 checkout "$HOME/remote-agent" https://github.com/sweepies/remote-agent ${quote(props.commit)}
 checkout "$HOME/dotfiles" https://github.com/sweepies/dotfiles ${quote(props.dotfilesPin)}
