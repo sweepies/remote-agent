@@ -57,6 +57,10 @@ mode = "0755"
 # Above .bashrc's non-interactive early return, so login probes (`bash -lc`,
 # used by T3 to find provider CLIs) also resolve mise tools before /opt/runner/bin.
 "~/.bashrc/mise-shims" = { line = 'PATH="$HOME/.local/share/mise/shims:$PATH"', position = "prepend" }
+# Load only the Box-wide [env] before that return; remote-tools.toml owns MISE_ENV.
+# Bootstrap installs no project config at $HOME. Never freeze the starting repo's
+# env into the shell; a missing/failing mise must not interrupt shell startup.
+"~/.bashrc/mise-env" = { line = 'if _remote_agent_mise_env=$("$HOME/.local/bin/mise" -C "$HOME" env --shell bash); then eval "$_remote_agent_mise_env" || true; fi; unset _remote_agent_mise_env', position = "prepend" }
 
 [tasks.bootstrap]
 description = "Bootstrap shared dotfiles, remote tools, and a machine-local fnox identity"
@@ -68,11 +72,6 @@ unset FNOX_AGE_KEY FNOX_AGE_KEY_FILE REMOTE_AGE_KEY
 pin=$(tr -d '\n' < dotfiles.lock)
 [ "$(git -C "$HOME/dotfiles" rev-parse HEAD)" = "$pin" ] || { echo 'Dotfiles checkout does not match dotfiles.lock.' >&2; exit 1; }
 [ -z "$(git -C "$HOME/dotfiles" status --porcelain)" ] || { echo 'Refusing modified dotfiles.' >&2; exit 1; }
-hooks="$HOME/dotfiles/.config/git/hooks"
-relock() { if [ -d "$hooks" ]; then chmod a-w "$hooks"; fi; }
-trap relock EXIT
-trap 'exit 1' HUP INT TERM
-if [ -d "$hooks" ]; then chmod u+w "$hooks"; fi
 # Drop only the unmodified Upstash image defaults so their identity, credential
 # store and safe.directory wildcard do not override the shared Git defaults.
 # Dotfiles migrates the known legacy symlink and preserves regular local config.
