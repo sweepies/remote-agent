@@ -77,7 +77,7 @@ esac
         self.assertNotIn("remote-agent-auth", REMOTE["tasks"])
         self.assertEqual(set(CONFIG["dotfiles"]), {
             "~/.pi/agent/mcp.json", "~/.pi/agent/skills",
-            "~/.config/mise/conf.d/remote-agent.toml", "~/.bashrc/local-bin", "~/.bashrc/mise-shims"})
+            "~/.config/mise/conf.d/remote-agent.toml", "~/.bashrc/local-bin", "~/.bashrc/mise-shims", "~/.bashrc/mise-env"})
         self.assertFalse((ROOT / "scripts/box-bootstrap.sh").exists())
         self.assertEqual(set(REMOTE["tools"]), {
             "go", "node", "openbao", "op", "npm:t3", "aqua:tailscale/tailscale"})
@@ -86,7 +86,59 @@ esac
         self.assertEqual(REMOTE["tools"]["op"]["version"], "2.40.0")
         self.assertEqual(REMOTE["tools"]["npm:t3"], "0.0.46-nightly.20261007.2774")
         self.assertIs(REMOTE["env"]["FNOX_AGE_KEY"], False)
+        self.assertEqual(REMOTE["env"]["MISE_ENV"], "agent")
         self.assertEqual(REMOTE["tools"]["op"]["os"], ["linux"])
+
+    def test_box_environment_reaches_login_shells_and_service_sessions(self):
+        mise = shutil.which("mise")
+        self.assertIsNotNone(mise)
+        config = self.home / ".config/mise"
+        (config / "conf.d").mkdir(parents=True)
+        # Only the shipped environment contract; no tools, hooks or secrets.
+        (config / "conf.d/remote-agent.toml").write_text(
+            '[env]\nMISE_ENV = "' + REMOTE["env"]["MISE_ENV"] + '"\n')
+        for key in list(self.env):
+            if key.startswith(("MISE_", "XDG_", "FNOX_", "OP_")):
+                self.env.pop(key)
+        self.env.update(MISE_CONFIG_DIR=str(config), MISE_DATA_DIR=str(self.home / ".local/share/mise"),
+                        MISE_CACHE_DIR=str(self.home / "mise-cache"), MISE_OFFLINE="true",
+                        MISE_AUTO_INSTALL="false", MISE_TRUSTED_CONFIG_PATHS=str(self.home))
+        local = self.home / ".local/bin"
+        local.mkdir(parents=True)
+        (local / "mise").symlink_to(mise)
+        (config / "config.toml").write_text('[tasks.remote-agent-bao-config]\nrun = \'[ "$MISE_ENV" = agent ]\'\n')
+        entry = CONFIG["dotfiles"]["~/.bashrc/mise-env"]
+        self.assertEqual(entry["position"], "prepend")
+        self.assertEqual(entry["line"], 'eval "$("$HOME/.local/bin/mise" env --shell bash)"')
+        prefix = "\n".join(CONFIG["dotfiles"][f"~/.bashrc/{name}"]["line"] for name in ("mise-env", "local-bin", "mise-shims"))
+        (self.home / ".bashrc").write_text(prefix + '\ncase $- in *i*) ;; *) return;; esac\n')
+        (self.home / ".bash_profile").write_text('. "$HOME/.bashrc"\n')
+        infra = self.home / "private-infra"
+        infra.mkdir()
+        (infra / "mise.toml").write_text('[env]\nKUBECONFIG = "human-kubeconfig"\n')
+        (infra / "mise.agent.toml").write_text('[env]\nKUBECONFIG = "agent-kubeconfig"\n')
+        target = self.executable("kubectl", '#!/bin/sh\n[ "$MISE_ENV" = agent ] && [ "$KUBECONFIG" = agent-kubeconfig ]\n')
+        (local / "kubectl").symlink_to(target)
+        shims = self.home / ".local/share/mise/shims"
+        shims.mkdir(parents=True)
+        # Use the native shim dispatcher, not a simulated kubectl prefix.
+        (shims / "kubectl").symlink_to(mise)
+        probe = '[ "$MISE_ENV" = agent ] && kubectl get nodes && bash -c \'[ "$MISE_ENV" = agent ]\''
+        for args in (["bash", "-lc", probe], ["bash", "--noprofile", "--rcfile", str(self.home / ".bashrc"), "-ic", probe]):
+            result = subprocess.run(args, cwd=infra, env=self.env, text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.executable("flock", "#!/bin/sh\nexit 0\n")
+        self.executable("node", '#!/bin/sh\n[ "$MISE_ENV" = agent ] || exit 91\n')
+        self.executable("t3", '#!/bin/sh\n[ "$MISE_ENV" = agent ] || exit 92\nbash -c \'[ "$MISE_ENV" = agent ]\'\n')
+        self.executable("tailscaled", '#!/bin/sh\n[ "$MISE_ENV" = agent ] || exit 93\nprintf "%s\\n" "$*" > "$CALL_LOG"\n')
+        # Execute the real launchers, relocating only their persistent state root.
+        for name in ("box-start.sh", "t3-serve.sh", "relay-serve.sh", "tailscale-daemon.sh", "bao-agent.sh"):
+            source = (ROOT / "scripts" / name).read_text().replace("/workspace/home", str(self.home))
+            (self.home / "remote-agent").mkdir(exist_ok=True)
+            result = subprocess.run(["sh", "-c", source], cwd=self.home, env=self.env,
+                                    text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--socks5-server=127.0.0.1:1055", (self.home / "calls").read_text())
 
     def test_fresh_identity_repeat_and_rebuilt_machine(self):
         self.mock_bootstrap_tools()
@@ -178,6 +230,10 @@ esac
     def test_cutover_service_contract(self):
         self.assertRegex((ROOT / "dotfiles.lock").read_text(), r"^[a-f0-9]{40}\n$")
         self.assertIn("--host 127.0.0.1", (ROOT / "scripts/t3-serve.sh").read_text())
+        daemon = (ROOT / "scripts/tailscale-daemon.sh").read_text()
+        self.assertIn("--tun=userspace-networking", daemon)
+        self.assertIn("--socks5-server=127.0.0.1:1055", daemon)
+        self.assertEqual(daemon.count("--socks5-server="), 1)
         for name in ("t3-serve.sh", "tailscale-daemon.sh", "relay-serve.sh", "bao-agent.sh"):
             launcher = (ROOT / "scripts" / name).read_text()
             self.assertIn("flock -n 9", launcher)

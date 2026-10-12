@@ -22,7 +22,7 @@ export function serviceFingerprints(): ServiceFingerprints {
   const config = Bun.TOML.parse(readFileSync("remote-tools.toml", "utf8")) as { tools: Record<string, unknown>; env: Record<string, unknown>; tasks: Record<string, { run: string }> };
   const local = Bun.TOML.parse(readFileSync("mise.toml", "utf8")) as { tools: Record<string, unknown> };
   const common = ["services/processes.mjs", "services/register.mjs", "scripts/box-start.sh", "services/init.mjs"].map(path => readFileSync(path, "utf8"));
-  const fingerprint = (paths: string[], version: unknown) => sha256(JSON.stringify([local.tools.node, config.tools.node, ...common, version, ...paths.map(path => readFileSync(path, "utf8"))]));
+  const fingerprint = (paths: string[], version: unknown) => sha256(JSON.stringify([local.tools.node, config.tools.node, config.env, ...common, version, ...paths.map(path => readFileSync(path, "utf8"))]));
   return {
     // T3 launches provider CLIs (Pi, Claude Code, Codex) from the dotfiles tool
     // set it started with, so a dotfiles pin change restarts it (idle-gated).

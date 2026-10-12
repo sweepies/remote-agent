@@ -57,6 +57,8 @@ mode = "0755"
 # Above .bashrc's non-interactive early return, so login probes (`bash -lc`,
 # used by T3 to find provider CLIs) also resolve mise tools before /opt/runner/bin.
 "~/.bashrc/mise-shims" = { line = 'PATH="$HOME/.local/share/mise/shims:$PATH"', position = "prepend" }
+# Load the Box-wide [env] before that return too; remote-tools.toml owns MISE_ENV.
+"~/.bashrc/mise-env" = { line = 'eval "$("$HOME/.local/bin/mise" env --shell bash)"', position = "prepend" }
 
 [tasks.bootstrap]
 description = "Bootstrap shared dotfiles, remote tools, and a machine-local fnox identity"
